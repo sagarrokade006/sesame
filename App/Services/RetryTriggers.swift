@@ -11,6 +11,17 @@ final class RetryTriggers {
         init(_ action: @escaping @Sendable () -> Void) { self.action = action }
     }
 
+    /// Reading the Space bar at the lock screen needs Input Monitoring.
+    nonisolated static var canHearSpace: Bool {
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+    }
+
+    /// Shows the system prompt the first time. Returns false once macOS has already been answered.
+    @discardableResult
+    nonisolated static func requestSpaceAccess() -> Bool {
+        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+    }
+
     var onRequest: (() -> Void)?
     /// The area of the screen that counts as "at the notch".
     var hotZone: (() -> CGRect?)?
@@ -52,7 +63,7 @@ final class RetryTriggers {
     /// The login window blocks ordinary key monitoring, so this reads the keyboard device and looks only at the
     /// Space bar. If macOS hasn't granted access, the pointer still works.
     private func startListeningForSpace() {
-        guard manager == nil, IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted else { return }
+        guard manager == nil, Self.canHearSpace else { return }
 
         let device = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(device, [

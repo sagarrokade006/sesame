@@ -2,11 +2,11 @@ import CryptoKit
 import Foundation
 
 // Confirms a release file's signature matches the public key shipped inside the app, using the same check users'
-// copies perform. Usage: swift tools/verify_update_signature.swift <file> <base64 signature>
+// copies perform. Usage: swift tools/verify_update_signature.swift <file> <base64 signature> [Info.plist]
 
 let arguments = CommandLine.arguments
-guard arguments.count == 3,
-      let plistData = FileManager.default.contents(atPath: "Config/Info.plist"),
+guard arguments.count == 3 || arguments.count == 4,
+      let plistData = FileManager.default.contents(atPath: arguments.count == 4 ? arguments[3] : "Config/Info.plist"),
       let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
       let publicText = plist["SUPublicEDKey"] as? String,
       let publicData = Data(base64Encoded: publicText),

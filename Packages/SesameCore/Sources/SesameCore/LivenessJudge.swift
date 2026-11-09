@@ -54,8 +54,11 @@ public struct LivenessJudge: Sendable {
         case spoof
     }
 
-    private let rectangleFramesForSpoof = 3
-    private var rectangleFrames = 0
+    /// A phone or printout held up to the camera is outlined in nearly every frame. A doorframe or monitor edge behind
+    /// a real person only lines up now and then, so a few scattered hits must not count.
+    private let recentFrameCount = 8
+    private let framedFramesForSpoof = 6
+    private var recentFraming: [Bool] = []
 
     private var peakOpenness = 0.0
     private var eyesClosedAt: TimeInterval?
@@ -77,10 +80,9 @@ public struct LivenessJudge: Sendable {
 
     /// `countsAsProof` is false for a face that can't be the owner, so it can only ever add spoof evidence.
     public mutating func observe(_ reading: FaceReading, countsAsProof: Bool) -> Finding {
-        if reading.isFramedByRectangle {
-            rectangleFrames += 1
-        }
-        if rectangleFrames >= rectangleFramesForSpoof {
+        recentFraming.append(reading.isFramedByRectangle)
+        if recentFraming.count > recentFrameCount { recentFraming.removeFirst() }
+        if recentFraming.filter({ $0 }).count >= framedFramesForSpoof {
             return .spoof
         }
         guard countsAsProof else {

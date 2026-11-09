@@ -31,6 +31,8 @@ public struct UnlockAttempt: Sendable {
     private var judge = LivenessJudge()
     public private(set) var challenge: TurnChallenge?
     private var matchStreak = 0
+    /// Recognized and attentive, only missing proof of life. Worth telling the person to blink.
+    public private(set) var isWaitingForProof = false
     private var doubtStartedAt: TimeInterval?
     private var lastSeenAt: TimeInterval?
 
@@ -42,6 +44,7 @@ public struct UnlockAttempt: Sendable {
 
     private mutating func forgetContinuity() {
         matchStreak = 0
+        isWaitingForProof = false
         judge.forgetProof()
         challenge?.restart()
     }
@@ -83,6 +86,7 @@ public struct UnlockAttempt: Sendable {
 
         let provedAlive = finding == .alive
         let passedChallenge = challenge?.isComplete ?? true
+        isWaitingForProof = matchStreak >= rules.matchingFramesRequired && passedChallenge && !provedAlive
         return matchStreak >= rules.matchingFramesRequired && provedAlive && passedChallenge
             ? .unlock(name: name)
             : .keepWatching

@@ -80,7 +80,7 @@ struct MainView: View {
         .task {
             // Ends on its own when the window closes.
             while !Task.isCancelled {
-                model.refreshPermissions()
+                model.permissions.refresh()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -169,6 +169,9 @@ private struct Sidebar: View {
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Theme.primary : Theme.primary.opacity(0.8))
                 Spacer(minLength: 0)
+                if item == .about, model.updates.availableVersion != nil {
+                    Circle().fill(Theme.sky).frame(width: 7, height: 7)
+                }
                 if item == .activity, model.vault.isOpen, model.vault.contents.activity.failuresWhileAway > 0 {
                     Text("\(model.vault.contents.activity.failuresWhileAway)")
                         .font(.system(size: 10, weight: .bold))
@@ -261,9 +264,25 @@ struct OverviewPage: View {
     var body: some View {
         hero
 
+        if let version = model.updates.availableVersion {
+            Banner(symbol: "arrow.down.circle.fill", tint: Theme.sky, title: "Sesame \(version) is available",
+                   detail: "Your faces, password, and permissions carry over.") {
+                Button("Update") { model.updates.checkNow() }
+                    .buttonStyle(FilledButtonStyle(color: Theme.sky))
+            }
+        }
+
         if case .setupNeeded = status {
             setup
         } else {
+            if model.permissions.space.state != .ready {
+                Banner(symbol: "space", tint: Theme.sky, title: "Let Space start a scan",
+                       detail: model.permissions.space.state == .needsRestart
+                           ? "Turn Sesame on under Input Monitoring in System Settings, then restart Sesame."
+                           : "Allow Input Monitoring so pressing Space on the lock screen scans again. Moving the pointer to the notch works without it.") {
+                    PermissionButtons(state: model.permissions.space.state, allow: model.permissions.askForSpace, openSettings: model.permissions.openSpaceSettings)
+                }
+            }
             stats
             recent
         }
@@ -305,9 +324,17 @@ struct OverviewPage: View {
                 Spacer()
                 Text("\(done) of \(steps.count) done").font(.system(size: 11.5)).foregroundStyle(Theme.secondary).padding(.top, 8)
             }
-            ProgressView(value: Double(done), total: Double(steps.count))
-                .tint(Theme.mint)
-                .padding(.horizontal, 4)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.08))
+                    Capsule()
+                        .fill(Theme.mint)
+                        .frame(width: max(6, proxy.size.width * Double(done) / Double(max(steps.count, 1))))
+                }
+            }
+            .frame(height: 6)
+            .padding(.horizontal, 4)
+            .animation(.easeOut(duration: 0.3), value: done)
             Card {
                 ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                     if index > 0 { RowDivider() }
@@ -315,9 +342,13 @@ struct OverviewPage: View {
                         if step.isDone {
                             Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(Theme.mint)
                         } else {
-                            Button(step.action) { perform(step) }
-                                .buttonStyle(.borderedProminent)
-                                .tint(Theme.mint)
+                            HStack(spacing: 8) {
+                                if let secondary = step.secondary {
+                                    Button(secondary) { perform(step, secondary: true) }
+                                }
+                                Button(step.action) { perform(step, secondary: false) }
+                                    .buttonStyle(FilledButtonStyle(color: Theme.mint))
+                            }
                         }
                     }
                 }
@@ -325,10 +356,15 @@ struct OverviewPage: View {
         }
     }
 
-    private func perform(_ step: SetupStep) {
+    private func perform(_ step: SetupStep, secondary: Bool) {
         switch step.id {
-        case "camera": Task { await model.requestCamera() }
-        case "typing": model.requestTyping()
+        case "camera": Task { await model.permissions.askForCamera() }
+        case "typing":
+            switch (model.permissions.typing.state, secondary) {
+            case (.needsRestart, true): model.permissions.openTypingSettings()
+            case (.needsRestart, false): Permissions.restartSesame()
+            default: model.permissions.askForTyping()
+            }
         case "face": open(.faces)
         default: open(.password)
         }
@@ -416,8 +452,7 @@ struct PasswordPage: View {
                         .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Theme.line))
                         .onSubmit(save)
                     Button(isSaving ? "Checking…" : (vault.hasPassword ? "Replace" : "Save"), action: save)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.mint)
+                        .buttonStyle(FilledButtonStyle(color: Theme.mint))
                         .controlSize(.large)
                         .disabled(entry.isEmpty || isSaving)
                 }
@@ -488,8 +523,7 @@ struct ApprovalGate<Content: View>: View {
         if !vault.hasRecentApproval {
             Banner(symbol: "lock.fill", tint: Theme.sky, title: "Locked to prevent changes", detail: "Authenticate to change how face unlock works.") {
                 Button("Unlock") { Task { _ = await vault.requireApproval(reason) } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.sky)
+                    .buttonStyle(FilledButtonStyle(color: Theme.sky))
             }
         }
         VStack(alignment: .leading, spacing: 14) { content }
@@ -502,6 +536,14 @@ struct SecurityPage: View {
     let model: AppModel
 
     private var vault: Vault { model.vault }
+
+    private var spaceDetail: String {
+        switch model.permissions.space.state {
+        case .ready: return "Starts another scan."
+        case .needsPermission: return "Needs Input Monitoring, so Sesame can see the Space bar while the Mac is locked."
+        case .needsRestart: return "Turn Sesame on under Input Monitoring in System Settings, then restart Sesame."
+        }
+    }
 
     private func binding<Value>(_ path: WritableKeyPath<SecuritySettings, Value>) -> Binding<Value> {
         Binding(
@@ -525,6 +567,19 @@ struct SecurityPage: View {
                 SettingRow(icon: "bolt.fill", tint: Theme.amber, title: "Scan as soon as the Mac locks", detail: "Faster, but may unlock again if you're still in view.") {
                     Switch(isOn: binding(\.scansWhenLocking))
                 }
+            }
+
+            SectionHeader(text: "Scan again")
+            Card {
+                SettingRow(icon: "space", tint: Theme.sky, title: "Press Space at the lock screen", detail: spaceDetail) {
+                    if model.permissions.space.state == .ready {
+                        Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(Theme.mint)
+                    } else {
+                        PermissionButtons(state: model.permissions.space.state, allow: model.permissions.askForSpace, openSettings: model.permissions.openSpaceSettings)
+                    }
+                }
+                RowDivider()
+                SettingRow(icon: "cursorarrow.motionlines", tint: Theme.sky, title: "Move the pointer to the notch", detail: "Always works, no permission needed.")
             }
 
             SectionHeader(text: "Trust")
@@ -555,6 +610,28 @@ struct SecurityPage: View {
                 SettingRow(icon: "hand.raised.fill", tint: Theme.secondary, title: "Pauses after 5 failed attempts", detail: "Until the Mac is unlocked another way.")
                 RowDivider()
                 SettingRow(icon: "video.slash.fill", tint: Theme.secondary, title: "Ignores virtual cameras", detail: "Only the built-in, Continuity, or a USB camera is used.")
+            }
+        }
+    }
+}
+
+/// Allow, or Open Settings and Restart once macOS needs a fresh copy of Sesame.
+struct PermissionButtons: View {
+    let state: PermissionGate.State
+    let allow: () -> Void
+    let openSettings: () -> Void
+
+    var body: some View {
+        switch state {
+        case .ready:
+            EmptyView()
+        case .needsPermission:
+            Button("Allow", action: allow)
+        case .needsRestart:
+            HStack(spacing: 8) {
+                Button("Open Settings", action: openSettings)
+                Button("Restart") { Permissions.restartSesame() }
+                    .buttonStyle(FilledButtonStyle(color: Theme.mint))
             }
         }
     }
@@ -662,8 +739,10 @@ struct ActivityPage: View {
 struct AboutPage: View {
     let updates: UpdateService
 
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    private var updateDetail: String {
+        if let error = updates.lastError { return "Last check failed: \(error)" }
+        guard let checked = updates.lastChecked else { return "Updates are signed and verified before installing." }
+        return "Last checked \(checked.formatted(.relative(presentation: .named)))."
     }
 
     var body: some View {
@@ -675,7 +754,7 @@ struct AboutPage: View {
             .frame(width: 72, height: 72)
             .padding(.bottom, 4)
             Text("Sesame").font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(Theme.primary)
-            Text(version.isEmpty ? "Face unlock for your Mac" : "Version \(version) · Face unlock for your Mac")
+            Text("Version \(UpdateService.currentVersion) · Face unlock for your Mac")
                 .font(.system(size: 12.5))
                 .foregroundStyle(Theme.secondary)
         }
@@ -687,18 +766,19 @@ struct AboutPage: View {
             SectionHeader(text: "Updates")
             Card {
                 SettingRow(
-                    icon: "arrow.down.circle.fill", tint: Theme.sky,
+                    icon: updates.availableVersion == nil ? "checkmark.seal.fill" : "arrow.down.circle.fill",
+                    tint: updates.availableVersion == nil ? Theme.mint : Theme.sky,
                     title: updates.availableVersion.map { "Version \($0) is available" } ?? "Sesame is up to date",
-                    detail: updates.availableVersion == nil ? "Updates are signed and checked before installing." : nil
+                    detail: updateDetail
                 ) {
                     if updates.availableVersion != nil {
-                        Button("Update") { updates.checkNow() }.buttonStyle(.borderedProminent).tint(Theme.mint)
+                        Button("Update") { updates.checkNow() }.buttonStyle(FilledButtonStyle(color: Theme.mint))
                     } else {
                         Button("Check now") { updates.checkNow() }
                     }
                 }
                 RowDivider()
-                SettingRow(icon: "clock.arrow.circlepath", tint: Theme.sky, title: "Check automatically", detail: "Once a day.") {
+                SettingRow(icon: "clock.arrow.circlepath", tint: Theme.sky, title: "Check automatically", detail: "Once a day. You'll get a notification when there's a new version.") {
                     Switch(isOn: Binding(get: { updates.checksAutomatically }, set: { updates.checksAutomatically = $0 }))
                 }
             }

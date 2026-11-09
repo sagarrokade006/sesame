@@ -136,6 +136,12 @@ final class UnlockController {
         if !reader.isReady { return .message("Face unlock unavailable", "The recognition model is missing.") }
         if vault.contents.passwordHealth.isOutdated { return .message("Sesame paused", "Your saved password looks out of date.") }
         if counter.isExhausted { return .message("Sesame paused", "Too many attempts. Enter your password.") }
+        if Permissions.shared.typing.state == .needsPermission {
+            return .message("Sesame can't type yet", "Open Sesame and allow Accessibility.")
+        }
+        if Permissions.shared.typing.state == .needsRestart {
+            return .message("Restart Sesame", "macOS won't let this copy type your password until it restarts.")
+        }
         if let unmet = Surroundings.shared.firstUnmet(vault.contents.settings.unlockRules) {
             return .message("Face unlock is off", unmet.explanation)
         }
@@ -144,7 +150,8 @@ final class UnlockController {
 
     private func beginScan() {
         vault.closeIfExpired()
-        scanLog.notice("scan requested locked=\(MacLockScreen.isLocked, privacy: .public) idle=\(self.attempt == nil, privacy: .public) confirming=\(self.isConfirmingEntry, privacy: .public) vaultTrusted=\(self.vault.isTrusted, privacy: .public) hasPassword=\(self.vault.hasPassword, privacy: .public) activeFaces=\(self.vault.contents.profiles.filter(\.isActive).count, privacy: .public) canType=\(MacLockScreen.canType, privacy: .public) model=\(self.reader.isReady, privacy: .public)")
+        Permissions.shared.refresh()
+        scanLog.notice("scan requested locked=\(MacLockScreen.isLocked, privacy: .public) idle=\(self.attempt == nil, privacy: .public) confirming=\(self.isConfirmingEntry, privacy: .public) vaultTrusted=\(self.vault.isTrusted, privacy: .public) hasPassword=\(self.vault.hasPassword, privacy: .public) activeFaces=\(self.vault.contents.profiles.filter(\.isActive).count, privacy: .public) typing=\(String(describing: Permissions.shared.typing.state), privacy: .public) model=\(self.reader.isReady, privacy: .public)")
         guard canScan else { return }
         triggers.start()
         if let blocker {
@@ -173,6 +180,8 @@ final class UnlockController {
     private func showProgress() {
         if let challenge = attempt?.challenge, !challenge.isComplete {
             badge.show(.turn(challenge.direction, progress: challenge.progress))
+        } else if attempt?.isWaitingForProof == true {
+            badge.show(.blink)
         } else {
             badge.show(.scanning)
         }
@@ -251,8 +260,8 @@ final class UnlockController {
     }
 
     private func enterPassword(for name: String) {
-        scanLog.notice("entering password canType=\(MacLockScreen.canType, privacy: .public)")
-        guard MacLockScreen.canType, var password = try? vault.openPassword() else {
+        scanLog.notice("entering password typing=\(String(describing: Permissions.shared.typing.state), privacy: .public)")
+        guard Permissions.shared.isTypingReady, var password = try? vault.openPassword() else {
             log(.passwordProblem, note: "Sesame couldn't type the password.")
             badge.show(.failure)
             return
@@ -282,8 +291,20 @@ final class UnlockController {
         }
         scanLog.notice("after typing stillLocked=\(MacLockScreen.isLocked, privacy: .public)")
         if MacLockScreen.isLocked {
-            vault.update { $0.passwordHealth.recordMissedEntry() }
-            log(.passwordProblem, note: "The Mac stayed locked after typing the password.")
+            // A correct password doesn't count as a failed login, so asking macOS is safe and tells the two failures apart.
+            let miss = EntryMiss(recheck: await vault.recheckPassword())
+            scanLog.notice("entry miss \(String(describing: miss), privacy: .public)")
+            switch miss {
+            case .keystrokesBlocked:
+                // Scanning again would only repeat the miss, so stop until Sesame restarts.
+                Permissions.shared.noteTypingBlocked()
+                log(.passwordProblem, note: "macOS blocked Sesame's keystrokes. Restart Sesame.")
+            case .wrongPassword:
+                log(.passwordProblem, note: "Your saved password no longer works. Save the new one.")
+            case .unknown:
+                vault.update { $0.passwordHealth.recordMissedEntry() }
+                log(.passwordProblem, note: "The Mac stayed locked after typing the password.")
+            }
             if let blocker { badge.show(blocker) } else { badge.show(.failure) }
         } else {
             vault.update { $0.passwordHealth.recordUnlock(at: Date()) }

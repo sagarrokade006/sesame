@@ -234,8 +234,7 @@ private struct EnrollmentPanel: View {
                     Spacer()
                     if isComplete {
                         Button("Save") { finish(enrollment.makeProfile()) }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.mint)
+                            .buttonStyle(FilledButtonStyle(color: Theme.mint))
                             .disabled(enrollment.name.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }

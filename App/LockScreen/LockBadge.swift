@@ -33,7 +33,7 @@ private final class LockScreenLayer {
         _ = unsafeBitCast(showSymbol, to: ShowSpaces.self)(connection, [space] as CFArray)
     }
 
-    func adopt(_ window: NSWindow) {
+    @MainActor func adopt(_ window: NSWindow) {
         _ = moveWindows(connection, space, [window.windowNumber] as CFArray, 7)
     }
 }
@@ -54,10 +54,12 @@ final class LockBadge {
         case success
         case failure
         case message(String, String)
+        /// Recognized, waiting for a blink or small head movement.
+        case blink
 
         var usesWidePanel: Bool {
             switch self {
-            case .turn, .message: return true
+            case .turn, .message, .blink: return true
             case .scanning, .success, .failure: return false
             }
         }
@@ -152,7 +154,7 @@ final class LockBadge {
         case .success:
             // Only a safety net. Normally the unlock result decides when this goes away.
             hide(after: .seconds(8))
-        case .scanning, .turn:
+        case .scanning, .turn, .blink:
             break
         }
     }
@@ -278,6 +280,14 @@ private struct BadgeContent: View {
                 Text(direction == .left ? "Slowly turn left" : "Slowly turn right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
+            }
+        case .blink:
+            HStack(spacing: 12) {
+                ScanMark(state: .scanning).frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Blink to unlock").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Or move your head a little").font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
+                }
             }
         case .message(let title, let detail):
             VStack(spacing: 3) {

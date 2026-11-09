@@ -120,17 +120,45 @@ private struct Run {
         #expect(!run.unlocked)
     }
 
+    @Test func aRecognizedStillFaceAsksForABlink() {
+        var run = Run()
+        run.frames(owner, count: 10)
+        #expect(run.attempt.isWaitingForProof)
+        #expect(!run.outcomes.contains(.unlock(name: "Alex")))
+        run.blink(owner)
+        run.frames(owner, count: 3)
+        #expect(run.outcomes.contains(.unlock(name: "Alex")))
+    }
+
+    @Test func aStrangerIsNeverAskedToBlink() {
+        var run = Run()
+        run.frames(.stranger, count: 10)
+        #expect(!run.attempt.isWaitingForProof)
+    }
+
     @Test func rectangleAroundTheFaceIsASpoof() {
         var run = Run()
-        for _ in 0..<3 { run.frame(owner, framed: true) }
+        for _ in 0..<6 { run.frame(owner, framed: true) }
         #expect(run.outcomes.contains(.spoof))
+    }
+
+    @Test func aFewFramedFramesAreNotASpoof() {
+        var run = Run()
+        for _ in 0..<3 { run.frame(owner, framed: true) }
+        #expect(!run.outcomes.contains(.spoof))
+    }
+
+    @Test func scatteredFramingFromTheBackgroundIsNotASpoof() {
+        var run = Run()
+        for index in 0..<60 { run.frame(owner, framed: index % 3 == 0) }
+        #expect(!run.outcomes.contains(.spoof))
     }
 
     @Test func spoofEvidenceSurvivesChangingFaces() {
         var run = Run()
-        run.frame(.stranger, framed: true)
-        run.frame(owner, framed: true)
-        run.frame(.doubtful, framed: true)
+        for verdict in [FaceVerdict.stranger, owner, .doubtful, .stranger, owner, .doubtful] {
+            run.frame(verdict, framed: true)
+        }
         #expect(run.outcomes.contains(.spoof))
     }
 

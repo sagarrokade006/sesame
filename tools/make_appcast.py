@@ -1,8 +1,11 @@
 """Writes the update feed that installed copies of Sesame read.
 
 Usage: make_appcast.py <version> <build> <signature> <length> <output path>
+
+DOWNLOAD_URL replaces the GitHub download link, for testing updates locally.
 """
 
+import os
 import sys
 from email.utils import formatdate
 from xml.sax.saxutils import escape, quoteattr
@@ -11,7 +14,7 @@ REPOSITORY = "https://github.com/sagarrokade006/sesame"
 
 
 def main(version, build, signature, length, output):
-    url = f"{REPOSITORY}/releases/download/v{version}/Sesame-{version}.dmg"
+    url = os.environ.get("DOWNLOAD_URL") or f"{REPOSITORY}/releases/download/v{version}/Sesame-{version}.dmg"
     notes = f"{REPOSITORY}/releases/tag/v{version}"
     feed = f"""<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">

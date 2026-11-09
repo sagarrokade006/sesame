@@ -55,20 +55,33 @@ struct SetupStep: Identifiable {
     let detail: String
     let isDone: Bool
     let action: String
+    /// A quieter second button, such as Open Settings next to Restart.
+    var secondary: String?
 }
 
 extension AppModel {
     var setupSteps: [SetupStep] {
         [
             SetupStep(id: "camera", symbol: "camera.fill", title: "Camera", detail: "Sees your face when your Mac wakes.", isDone: cameraAccess == .authorized, action: "Allow"),
-            SetupStep(
-                id: "typing", symbol: "keyboard.fill", title: "Accessibility",
-                detail: "Lets Sesame type your password at the lock screen.",
-                isDone: canType, action: "Allow"
-            ),
+            typingStep,
             SetupStep(id: "face", symbol: "person.crop.square.fill", title: "Your face", detail: "A quick scan, like setting up Face ID.", isDone: vault.contents.profiles.contains(where: \.isActive), action: "Add"),
             SetupStep(id: "password", symbol: "key.fill", title: "Mac password", detail: "Encrypted on this Mac and typed for you.", isDone: vault.hasPassword, action: "Add"),
         ]
+    }
+
+    private var typingStep: SetupStep {
+        switch permissions.typing.state {
+        case .ready:
+            return SetupStep(id: "typing", symbol: "keyboard.fill", title: "Accessibility", detail: "Lets Sesame type your password at the lock screen.", isDone: true, action: "")
+        case .needsPermission:
+            return SetupStep(id: "typing", symbol: "keyboard.fill", title: "Accessibility", detail: "Lets Sesame type your password at the lock screen.", isDone: false, action: "Allow")
+        case .needsRestart:
+            return SetupStep(
+                id: "typing", symbol: "keyboard.fill", title: "Accessibility",
+                detail: "Turn Sesame on in System Settings, then restart it. macOS only applies this to a fresh copy of Sesame.",
+                isDone: false, action: "Restart", secondary: "Open Settings"
+            )
+        }
     }
 
     var unlockStatus: UnlockStatus {

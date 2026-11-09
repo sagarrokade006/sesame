@@ -10,11 +10,8 @@ enum MacLockScreen {
         return session["CGSSessionScreenIsLocked"] as? Bool ?? false
     }
 
-    nonisolated static var canType: Bool { AXIsProcessTrusted() }
-
-    static func requestTypingPermission() {
-        AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-    }
+    /// Typing at the lock screen needs both Accessibility and permission to post keyboard events.
+    nonisolated static var canType: Bool { Permissions.canType }
 }
 
 /// Types the password at the login window.

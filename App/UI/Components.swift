@@ -108,12 +108,57 @@ struct SectionHeader: View {
     }
 }
 
-/// A mint switch with no label, which every setting row uses.
+/// A mint switch with no label, which every setting row uses. Drawn by hand so it looks the same whether or not the
+/// window is in front, and in snapshots.
 struct Switch: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch).tint(Theme.mint).controlSize(.small)
+        Toggle("", isOn: $isOn).labelsHidden().toggleStyle(SesameSwitchStyle())
+    }
+}
+
+struct SesameSwitchStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) { configuration.isOn.toggle() }
+        } label: {
+            Capsule()
+                .fill(configuration.isOn ? Theme.mint : Color.white.opacity(0.16))
+                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                    Circle()
+                        .fill(.white)
+                        .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+                        .padding(2)
+                }
+                .frame(width: 34, height: 20)
+                .opacity(isEnabled ? 1 : 0.5)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement()
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
+    }
+}
+
+/// A filled, rounded button for the main action in a row. Drawn by hand for the same reason as `SesameSwitchStyle`.
+struct FilledButtonStyle: ButtonStyle {
+    var color: Color = Theme.mint
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color(red: 0.03, green: 0.12, blue: 0.10))
+            .padding(.horizontal, controlSize == .large ? 16 : 12)
+            .frame(height: controlSize == .large ? 32 : 26)
+            .background(color.opacity(configuration.isPressed ? 0.75 : 1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.4)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -205,8 +250,7 @@ struct PrimaryButton: View {
             .font(.system(size: 13, weight: .semibold))
             .padding(.horizontal, 6)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(Theme.mint)
+        .buttonStyle(FilledButtonStyle(color: Theme.mint))
         .controlSize(.large)
     }
 }

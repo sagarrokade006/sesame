@@ -262,12 +262,14 @@ final class Vault {
     }
 
     /// Each wrong check counts as a failed login, so this only runs when there's a reason to.
-    func recheckPassword() async {
-        guard var bytes = try? openPassword() else { return }
+    @discardableResult
+    func recheckPassword() async -> PasswordCheck {
+        guard var bytes = try? openPassword() else { return .unavailable }
         let password = String(data: bytes, encoding: .utf8) ?? ""
         bytes.resetBytes(in: 0..<bytes.count)
         let check = await Task.detached(priority: .userInitiated) { MacPassword.check(password) }.value
         update { $0.passwordHealth.record(check, at: Date()) }
+        return check
     }
 
     func eraseEverything() {
