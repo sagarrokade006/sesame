@@ -69,17 +69,44 @@ final class AppModel {
         NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
     }
 
+    /// The saved data exists but this copy of Sesame can't decrypt it, such as after switching between a build from
+    /// Xcode and a release, which keep their keys in different places. Only starting over gets past this.
+    private(set) var canStartOver = false
+
     func openVault() async {
         do {
             try await vault.open()
             Self.bringToFront()
             errorMessage = nil
+            canStartOver = false
             if vault.hasPassword, !vault.contents.passwordHealth.isOutdated {
                 await vault.recheckPassword()
+            }
+        } catch let error as VaultError {
+            errorMessage = error.localizedDescription
+            switch error {
+            case .keyMissing, .unreadable: canStartOver = true
+            default: break
             }
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    #if DEBUG
+    func pretendKeyMissing() {
+        canStartOver = true
+        errorMessage = VaultError.keyMissing.localizedDescription
+    }
+    #endif
+
+    /// Deletes data this copy can't read, then sets up a fresh, empty vault. Opening it asks for Touch ID.
+    func startOver() async {
+        guard canStartOver else { return }
+        vault.eraseEverything()
+        canStartOver = false
+        errorMessage = nil
+        await openVault()
     }
 
     func eraseAll() async {

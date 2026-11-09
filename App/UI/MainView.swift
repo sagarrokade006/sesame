@@ -225,30 +225,56 @@ private struct Sidebar: View {
 
 struct LockedPage: View {
     let model: AppModel
+    @State private var confirmingStartOver = false
 
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                Hexagon().fill(Theme.mint.opacity(0.1))
-                Hexagon().stroke(Theme.mint.opacity(0.5), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-                Image(systemName: "lock.fill").font(.system(size: 30, weight: .semibold)).foregroundStyle(Theme.mint)
+                Hexagon().fill((model.canStartOver ? Theme.amber : Theme.mint).opacity(0.1))
+                Hexagon().stroke((model.canStartOver ? Theme.amber : Theme.mint).opacity(0.5), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                Image(systemName: model.canStartOver ? "key.slash" : "lock.fill")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(model.canStartOver ? Theme.amber : Theme.mint)
             }
             .frame(width: 84, height: 84)
 
-            VStack(spacing: 5) {
-                Text("Sesame is locked").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.primary)
-                Text(model.errorMessage ?? "Your faces and password are encrypted. Use Touch ID or your Mac password to open them.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(model.errorMessage == nil ? Theme.secondary : Theme.coral)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
+            if model.canStartOver {
+                VStack(spacing: 5) {
+                    Text("Sesame can't open its saved data").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.primary)
+                    Text("It was saved by a different build of Sesame, such as one built in Xcode, which keeps its key somewhere this one can't reach. Start over to set up your face and password again.")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 380)
+                }
+                HStack(spacing: 10) {
+                    Button("Try again") { Task { await model.openVault() } }
+                        .controlSize(.large)
+                    Button("Start over…") { confirmingStartOver = true }
+                        .buttonStyle(FilledButtonStyle(color: Theme.amber))
+                        .controlSize(.large)
+                }
+            } else {
+                VStack(spacing: 5) {
+                    Text("Sesame is locked").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.primary)
+                    Text(model.errorMessage ?? "Your faces and password are encrypted. Use Touch ID or your Mac password to open them.")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(model.errorMessage == nil ? Theme.secondary : Theme.coral)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 340)
+                }
+                PrimaryButton(title: "Unlock", symbol: "touchid") { Task { await model.openVault() } }
             }
-            PrimaryButton(title: "Unlock", symbol: "touchid") { Task { await model.openVault() } }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
+        .confirmationDialog("Start over?", isPresented: $confirmingStartOver) {
+            Button("Delete and Start Over", role: .destructive) { Task { await model.startOver() } }
+        } message: {
+            Text("Sesame deletes the saved data it can't open: faces, saved password, history, and settings. Your Mac and its password aren't affected.")
+        }
     }
 }
 

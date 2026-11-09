@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Renders each page with sample data to PNGs, then quits. Debug builds only:
 /// SESAME_SNAPSHOT_DIR=/some/folder Sesame.app/Contents/MacOS/Sesame
-/// Optional: SESAME_SNAPSHOT_PAGES=overview,faces  SESAME_SNAPSHOT_SCENARIO=new|locked|restart|update  SESAME_SNAPSHOT_HEIGHT=900
+/// Optional: SESAME_SNAPSHOT_PAGES=overview,faces  SESAME_SNAPSHOT_SCENARIO=new|locked|keymissing|restart|update  SESAME_SNAPSHOT_HEIGHT=900
 @MainActor
 enum Snapshot {
     static var folder: URL? {
@@ -31,6 +31,7 @@ enum Snapshot {
         switch scenario {
         case "new": model.vault.openForSnapshot(VaultContents())
         case "locked": break
+        case "keymissing": model.pretendKeyMissing()
         default: model.vault.openForSnapshot(sample)
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
