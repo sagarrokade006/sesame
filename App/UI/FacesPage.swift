@@ -68,36 +68,15 @@ struct FacesPage: View {
     }
 }
 
-/// Guides someone through looking in a few directions and collects face samples at each.
+/// Feeds camera frames into the scan and keeps its state for the scanner screen.
 @MainActor
 @Observable
 final class Enrollment {
-    struct Pose {
-        let prompt: String
-        let yaw: ClosedRange<Double>
-        let pitch: ClosedRange<Double>
-    }
-
-    private static let poses = [
-        Pose(prompt: "Look straight ahead", yaw: -0.14...0.14, pitch: -0.18...0.18),
-        Pose(prompt: "Turn slightly left", yaw: 0.2...0.5, pitch: -0.25...0.25),
-        Pose(prompt: "Turn slightly right", yaw: -0.5 ... -0.2, pitch: -0.25...0.25),
-        Pose(prompt: "Tilt your head up", yaw: -0.25...0.25, pitch: -0.5 ... -0.14),
-        Pose(prompt: "Tilt your head down", yaw: -0.25...0.25, pitch: 0.14...0.5),
-    ]
-    private static let samplesPerPose = 4
-
-    private(set) var prompt = Enrollment.poses[0].prompt
-    private(set) var progress = 0.0
-    private(set) var isComplete = false
+    private(set) var scan = FaceScan()
     var name = ""
 
     @ObservationIgnored let camera = CameraFeed()
     @ObservationIgnored private let reader = FaceReader()
-    @ObservationIgnored private var vectors: [FaceVector] = []
-    @ObservationIgnored private var poseIndex = 0
-    @ObservationIgnored private var samplesInPose = 0
-    @ObservationIgnored private var lastSampleAt: TimeInterval = 0
 
     func start() {
         let reader = self.reader
@@ -112,34 +91,21 @@ final class Enrollment {
     }
 
     private func receive(_ capture: FaceCapture?) {
-        guard !isComplete, let capture else { return }
-        let pose = Self.poses[poseIndex]
-        guard let pitch = capture.reading.pitch, pose.yaw.contains(capture.reading.yaw), pose.pitch.contains(pitch),
-              capture.widthFraction >= 0.2, capture.captureQuality >= 0.3,
-              capture.reading.time - lastSampleAt >= 0.2
-        else { return }
-
-        lastSampleAt = capture.reading.time
-        vectors.append(capture.vector)
-        samplesInPose += 1
-        progress = Double(vectors.count) / Double(Self.poses.count * Self.samplesPerPose)
-
-        guard samplesInPose >= Self.samplesPerPose else { return }
-        samplesInPose = 0
-        poseIndex += 1
-        if poseIndex < Self.poses.count {
-            prompt = Self.poses[poseIndex].prompt
-        } else {
-            isComplete = true
-            prompt = "All done"
-            camera.stop()
-        }
+        guard let capture, scan.stage != .complete else { return }
+        scan.observe(
+            vector: capture.vector,
+            yaw: capture.reading.yaw,
+            pitch: capture.reading.pitch ?? 0,
+            time: capture.reading.time,
+            isWellPlaced: capture.widthFraction >= 0.2 && capture.distanceFromCenter <= 0.24 && capture.captureQuality >= 0.25
+        )
+        if scan.stage == .complete { camera.stop() }
     }
 
     func makeProfile() -> FaceProfile {
         FaceProfile(
             name: name.trimmingCharacters(in: .whitespaces),
-            vectors: vectors,
+            vectors: scan.vectors,
             modelVersion: FaceReader.modelVersion,
             createdAt: Date()
         )
@@ -150,25 +116,31 @@ private struct EnrollmentPanel: View {
     @Bindable var enrollment: Enrollment
     let finish: (FaceProfile?) -> Void
 
+    private var isComplete: Bool { enrollment.scan.stage == .complete }
+
     var body: some View {
         Panel {
-            VStack(spacing: 14) {
-                CameraPreview(session: enrollment.camera.session)
-                    .frame(height: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(spacing: 16) {
+                FaceScannerDial(scan: enrollment.scan) {
+                    CameraPreview(session: enrollment.camera.session)
+                }
 
-                Text(enrollment.prompt)
+                Text(scannerPrompt(for: enrollment.scan.stage))
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.primary)
-                ProgressView(value: enrollment.progress).tint(Theme.mint)
+                    .contentTransition(.opacity)
+                    .animation(.easeOut(duration: 0.2), value: enrollment.scan.stage)
 
-                if enrollment.isComplete {
-                    TextField("Name", text: $enrollment.name).textFieldStyle(.roundedBorder)
+                if isComplete {
+                    TextField("Name", text: $enrollment.name)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 260)
                 }
+
                 HStack {
                     Button("Cancel") { finish(nil) }
                     Spacer()
-                    if enrollment.isComplete {
+                    if isComplete {
                         Button("Save") { finish(enrollment.makeProfile()) }
                             .buttonStyle(.borderedProminent)
                             .tint(Theme.mint)
@@ -176,8 +148,58 @@ private struct EnrollmentPanel: View {
                     }
                 }
             }
-            .padding(14)
+            .padding(16)
         }
+    }
+}
+
+func scannerPrompt(for stage: FaceScan.Stage) -> String {
+    switch stage {
+    case .position: return "Center your face in the circle"
+    case .holdStill: return "Hold still"
+    case .turn: return "Move your head slowly in a circle"
+    case .complete: return "Face scanned"
+    }
+}
+
+/// The round camera view with its ring of tick marks.
+struct FaceScannerDial<Preview: View>: View {
+    let scan: FaceScan
+    @ViewBuilder let preview: Preview
+
+    private let previewSize: CGFloat = 212
+    private let dialSize: CGFloat = 276
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<FaceScan.tickCount, id: \.self) { tick in
+                let isLit = scan.litTicks.contains(tick) || scan.stage == .complete
+                let isActive = scan.activeTick == tick
+                Capsule()
+                    .fill(isActive ? Color.white : (isLit ? Theme.mint : Color.white.opacity(0.2)))
+                    .frame(width: 3.5, height: isActive ? 24 : (isLit ? 20 : 14))
+                    .offset(y: -(dialSize / 2 - 14))
+                    .rotationEffect(.degrees(Double(tick) / Double(FaceScan.tickCount) * 360))
+                    .animation(.spring(response: 0.28, dampingFraction: 0.7), value: isLit)
+                    .animation(.easeOut(duration: 0.12), value: isActive)
+            }
+
+            preview
+                // Mirrored, so moving your head left moves it left on screen.
+                .scaleEffect(x: -1, y: 1)
+                .frame(width: previewSize, height: previewSize)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.12)))
+
+            if scan.stage == .complete {
+                Circle()
+                    .fill(.black.opacity(0.55))
+                    .frame(width: previewSize, height: previewSize)
+                ScanMark(state: .success)
+                    .frame(width: 92, height: 92)
+            }
+        }
+        .frame(width: dialSize, height: dialSize)
     }
 }
 

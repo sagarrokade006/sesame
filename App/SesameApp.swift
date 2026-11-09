@@ -1,10 +1,22 @@
 import AppKit
+import AVFoundation
 import Observation
+import OSLog
 import SwiftUI
 
 @main
 struct SesameApp: App {
     @State private var model = AppModel()
+
+    init() {
+        // Two copies would both watch the camera, type the password, and overwrite each other's saved data.
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.sagarrokade.sesame")
+            .filter { $0 != .current }
+        if let other = others.first {
+            other.activate()
+            exit(0)
+        }
+    }
 
     var body: some Scene {
         Window("Sesame", id: "main") {
@@ -29,20 +41,74 @@ final class AppModel {
     let controller: UnlockController
     let updates = UpdateService()
     private(set) var errorMessage: String?
-    /// Bumped to make views re-read system permission state, which SwiftUI can't observe.
-    private(set) var refreshCount = 0
+    /// Mirrors of system permissions, which SwiftUI can't observe directly. See `refreshPermissions()`.
+    private(set) var cameraAccess = AVCaptureDevice.authorizationStatus(for: .video)
+    private(set) var canType = MacLockScreen.canType
+    @ObservationIgnored private var hasAskedToType = false
+    @ObservationIgnored private var hasLoggedPermissions = false
+    /// Set while the user is off approving something, so Sesame only comes forward when they were expecting it.
+    @ObservationIgnored private var isWaitingForPermission = false
+    @ObservationIgnored private let permissionLog = Logger(subsystem: "com.sagarrokade.sesame", category: "permissions")
 
     init() {
         controller = UnlockController(vault: vault)
     }
 
-    func refresh() {
-        refreshCount += 1
+    /// macOS doesn't announce permission changes, so the open window calls this regularly.
+    func refreshPermissions() {
+        let camera = AVCaptureDevice.authorizationStatus(for: .video)
+        let typing = MacLockScreen.canType
+        let gainedPermission = (camera == .authorized && cameraAccess != .authorized) || (typing && !canType)
+        if camera != cameraAccess || typing != canType || !hasLoggedPermissions {
+            hasLoggedPermissions = true
+            permissionLog.notice("camera=\(camera.rawValue, privacy: .public) accessibility=\(typing, privacy: .public)")
+        }
+        if camera != cameraAccess { cameraAccess = camera }
+        if typing != canType { canType = typing }
+        if gainedPermission, isWaitingForPermission {
+            isWaitingForPermission = false
+            Self.bringToFront()
+        }
+    }
+
+    /// System prompts and System Settings take focus, and a menu bar app isn't brought back automatically.
+    static func bringToFront() {
+        NSApp.activate()
+        NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
+    }
+
+    func requestCamera() async {
+        isWaitingForPermission = true
+        if cameraAccess == .notDetermined {
+            _ = await AVCaptureDevice.requestAccess(for: .video)
+            Self.bringToFront()
+        } else {
+            // macOS only asks once, so after that the switch has to be flipped in System Settings.
+            openPrivacySettings("Privacy_Camera")
+        }
+        refreshPermissions()
+    }
+
+    func requestTyping() {
+        isWaitingForPermission = true
+        if hasAskedToType {
+            openPrivacySettings("Privacy_Accessibility")
+        } else {
+            hasAskedToType = true
+            MacLockScreen.requestTypingPermission()
+        }
+    }
+
+    private func openPrivacySettings(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func openVault() async {
         do {
             try await vault.open()
+            Self.bringToFront()
             errorMessage = nil
             if vault.hasPassword, !vault.contents.passwordHealth.isOutdated {
                 await vault.recheckPassword()

@@ -9,7 +9,7 @@
 	<key>SUFeedURL</key>
 	<string>https://github.com/sagarrokade006/sesame/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>xiqzYaJqfQOEcLe4jbGKL9CI5H1mxhnQWuzOMZo/J0o=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>

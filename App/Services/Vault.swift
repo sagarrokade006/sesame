@@ -22,6 +22,16 @@ struct VaultContents: Codable {
     var settings = SecuritySettings()
 }
 
+extension VaultError {
+    /// Without the entitlement there's no protected key at all, and a vault made by such a build keeps its shared key.
+    var canUseSharedKeychain: Bool {
+        switch self {
+        case .keychain(errSecMissingEntitlement), .keyMissing: return true
+        default: return false
+        }
+    }
+}
+
 enum VaultError: LocalizedError {
     case keyMissing
     case unreadable
@@ -145,7 +155,7 @@ final class Vault {
             opened = try await Task.detached(priority: .userInitiated) {
                 try VaultKeychain.loadOrCreate(reason: "open Sesame", mayCreate: mayCreate)
             }.value
-        } catch VaultError.keychain(errSecMissingEntitlement) {
+        } catch let error as VaultError where error.canUseSharedKeychain {
             guard (try? await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "open Sesame")) == true else {
                 throw VaultError.keychain(errSecUserCanceled)
             }
@@ -196,6 +206,7 @@ final class Vault {
             return false
         }
         hasRecentApproval = true
+        AppModel.bringToFront()
         approvalExpiry?.cancel()
         approvalExpiry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(120))

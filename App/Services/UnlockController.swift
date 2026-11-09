@@ -1,6 +1,11 @@
 import AppKit
 import Observation
+import OSLog
 import SesameCore
+
+/// Numbers and yes/no states only, never names, faces, or passwords. Read with:
+/// log show --last 30m --predicate 'subsystem == "com.sagarrokade.sesame"'
+private let scanLog = Logger(subsystem: "com.sagarrokade.sesame", category: "unlock")
 
 /// Watches for the Mac locking and waking, and runs one scan at a time.
 @MainActor
@@ -19,9 +24,15 @@ final class UnlockController {
     @ObservationIgnored private var isConfirmingEntry = false
     @ObservationIgnored private var unlockNotificationPending = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private let triggers = RetryTriggers()
+    @ObservationIgnored private var retry = RetryBudget()
+    @ObservationIgnored private var followUp: Task<Void, Never>?
+    @ObservationIgnored private var isSleeping = false
 
     init(vault: Vault) {
         self.vault = vault
+        triggers.hotZone = { LockBadge.hotZone }
+        triggers.onRequest = { [weak self] in self?.requestScan() }
         listen()
     }
 
@@ -39,13 +50,58 @@ final class UnlockController {
             })
         }
 
-        watch(distributed, Notification.Name("com.apple.screenIsLocked")) { controller in
-            if controller.vault.contents.settings.scansWhenLocking { controller.scheduleScan() }
-        }
+        watch(distributed, Notification.Name("com.apple.screenIsLocked")) { $0.didLock() }
         watch(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.didUnlock() }
         watch(distributed, Notification.Name("com.apple.screensaver.didstop")) { $0.scheduleScan() }
         watch(workspace, NSWorkspace.screensDidWakeNotification) { $0.scheduleScan() }
-        watch(workspace, NSWorkspace.didWakeNotification) { $0.scheduleScan() }
+        watch(workspace, NSWorkspace.didWakeNotification) { controller in
+            controller.isSleeping = false
+            controller.scheduleScan()
+        }
+        watch(workspace, NSWorkspace.willSleepNotification) { $0.isSleeping = true }
+    }
+
+    private var canScan: Bool {
+        MacLockScreen.isLocked && attempt == nil && !isConfirmingEntry && vault.isTrusted && vault.hasPassword
+            && vault.contents.profiles.contains(where: \.isActive)
+    }
+
+    private func didLock() {
+        retry.reset()
+        triggers.start()
+        if vault.contents.settings.scansWhenLocking {
+            scheduleScan()
+            return
+        }
+        // Never scans here by default, or locking and walking away could unlock it again.
+        followUp?.cancel()
+        followUp = Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled, !isSleeping, canScan else { return }
+            badge.show(.message("Face unlock is ready", LockBadge.retryHint))
+        }
+    }
+
+    /// Space or the pointer reaching the notch.
+    private func requestScan() {
+        guard canScan, retry.allowsRequestedScan(at: ProcessInfo.processInfo.systemUptime) else { return }
+        followUp?.cancel()
+        beginScan()
+    }
+
+    /// Tries once more by itself, then explains how to ask for another scan.
+    private func afterMiss(_ miss: RetryBudget.Miss) {
+        let tryAgain = retry.shouldRetryAutomatically(after: miss)
+        followUp?.cancel()
+        followUp = Task {
+            try? await Task.sleep(for: miss == .noFace ? .milliseconds(400) : .milliseconds(1700))
+            guard !Task.isCancelled, canScan else { return }
+            if tryAgain {
+                beginScan()
+            } else {
+                badge.show(.message("Try again", LockBadge.retryHint))
+            }
+        }
     }
 
     private func didUnlock() {
@@ -54,6 +110,9 @@ final class UnlockController {
             try? await Task.sleep(for: .milliseconds(300))
             guard !MacLockScreen.isLocked else { return }
             counter.reset()
+            retry.reset()
+            followUp?.cancel()
+            triggers.stop()
             endScan()
             // After a face unlock, `confirmEntry` keeps the checkmark up briefly instead.
             if !isConfirmingEntry { badge.hide() }
@@ -65,6 +124,8 @@ final class UnlockController {
         let now = Date()
         if let lastTriggerAt, now.timeIntervalSince(lastTriggerAt) < 2 { return }
         lastTriggerAt = now
+        retry.reset()
+        followUp?.cancel()
         Task {
             try? await Task.sleep(for: .milliseconds(500))
             beginScan()
@@ -80,9 +141,9 @@ final class UnlockController {
 
     private func beginScan() {
         vault.closeIfExpired()
-        guard MacLockScreen.isLocked, attempt == nil, !isConfirmingEntry, vault.isTrusted, vault.hasPassword,
-              vault.contents.profiles.contains(where: \.isActive)
-        else { return }
+        scanLog.notice("scan requested locked=\(MacLockScreen.isLocked, privacy: .public) idle=\(self.attempt == nil, privacy: .public) confirming=\(self.isConfirmingEntry, privacy: .public) vaultTrusted=\(self.vault.isTrusted, privacy: .public) hasPassword=\(self.vault.hasPassword, privacy: .public) activeFaces=\(self.vault.contents.profiles.filter(\.isActive).count, privacy: .public) canType=\(MacLockScreen.canType, privacy: .public) model=\(self.reader.isReady, privacy: .public)")
+        guard canScan else { return }
+        triggers.start()
         if let blocker {
             badge.show(blocker)
             return
@@ -129,9 +190,14 @@ final class UnlockController {
                 for: capture.vector, among: contents.profiles, modelVersion: FaceReader.modelVersion
             )
             outcome = current.observe(capture.reading, verdict: verdict)
+            let best = contents.profiles.filter(\.isActive).map { $0.score(for: capture.vector) }.max() ?? -1
+            let reading = capture.reading
+            scanLog.notice("frame score=\(best, format: .fixed(precision: 3), privacy: .public) yaw=\(reading.yaw, format: .fixed(precision: 2), privacy: .public) pitch=\(reading.pitch ?? 0, format: .fixed(precision: 2), privacy: .public) eyes=\(reading.leftEyeOpenness ?? -1, format: .fixed(precision: 2), privacy: .public)/\(reading.rightEyeOpenness ?? -1, format: .fixed(precision: 2), privacy: .public) framed=\(reading.isFramedByRectangle, privacy: .public) width=\(capture.widthFraction, format: .fixed(precision: 2), privacy: .public)")
         } else {
             outcome = current.observeNoFace(at: time)
+            scanLog.notice("frame no face")
         }
+        if outcome != .keepWatching { scanLog.notice("scan outcome \(String(describing: outcome).prefix(8), privacy: .public)") }
         attempt = current
 
         switch outcome {
@@ -148,10 +214,12 @@ final class UnlockController {
         case .expired:
             endScan()
             badge.hide()
+            afterMiss(.noFace)
         }
     }
 
     private func endScan() {
+        if attempt != nil { retry.noteAttemptEnded(at: ProcessInfo.processInfo.systemUptime) }
         scanID = UUID()
         attempt = nil
         camera.stop()
@@ -166,6 +234,7 @@ final class UnlockController {
             badge.show(.message("Sesame paused", "Too many attempts. Enter your password."))
         } else {
             badge.show(.failure)
+            afterMiss(kind == .spoof ? .spoof : .stranger)
         }
     }
 
@@ -174,6 +243,7 @@ final class UnlockController {
     }
 
     private func enterPassword(for name: String) {
+        scanLog.notice("entering password canType=\(MacLockScreen.canType, privacy: .public)")
         guard MacLockScreen.canType, var password = try? vault.openPassword() else {
             log(.passwordProblem, note: "Sesame couldn't type the password.")
             badge.show(.failure)
@@ -194,6 +264,7 @@ final class UnlockController {
 
     private func confirmEntry(typed: Bool, name: String) async {
         defer { isConfirmingEntry = false }
+        scanLog.notice("password typed=\(typed, privacy: .public)")
         guard typed else {
             badge.hide()
             return
@@ -201,6 +272,7 @@ final class UnlockController {
         for _ in 0..<50 where MacLockScreen.isLocked {
             try? await Task.sleep(for: .milliseconds(100))
         }
+        scanLog.notice("after typing stillLocked=\(MacLockScreen.isLocked, privacy: .public)")
         if MacLockScreen.isLocked {
             vault.update { $0.passwordHealth.recordMissedEntry() }
             log(.passwordProblem, note: "The Mac stayed locked after typing the password.")

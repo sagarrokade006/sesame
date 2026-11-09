@@ -8,6 +8,7 @@ enum Page: String, CaseIterable, Identifiable {
     case password = "Password"
     case security = "Security"
     case activity = "Activity"
+    case help = "Help"
     case about = "About"
 
     var id: Self { self }
@@ -19,6 +20,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .password: return "key.fill"
         case .security: return "lock.shield.fill"
         case .activity: return "clock.fill"
+        case .help: return "questionmark.circle.fill"
         case .about: return "info.circle.fill"
         }
     }
@@ -46,6 +48,13 @@ struct MainView: View {
         }
         .background(Theme.page)
         .ignoresSafeArea()
+        .task {
+            // Ends on its own when the window closes.
+            while !Task.isCancelled {
+                model.refreshPermissions()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 
     private var rail: some View {
@@ -94,7 +103,9 @@ struct MainView: View {
 
     @ViewBuilder
     private var content: some View {
-        if page == .about {
+        if page == .help {
+            HelpPage()
+        } else if page == .about {
             AboutPage(updates: model.updates)
         } else if !model.vault.isOpen {
             LockedPage(model: model)
@@ -105,6 +116,7 @@ struct MainView: View {
             case .password: PasswordPage(model: model)
             case .security: SecurityPage(model: model)
             case .activity: ActivityPage(model: model)
+            case .help: HelpPage()
             case .about: AboutPage(updates: model.updates)
             }
         }
@@ -132,12 +144,11 @@ struct OverviewPage: View {
     private var vault: Vault { model.vault }
 
     private var isReady: Bool {
-        vault.hasPassword && vault.contents.profiles.contains(where: \.isActive) && MacLockScreen.canType
+        vault.hasPassword && vault.contents.profiles.contains(where: \.isActive) && model.canType
             && model.controller.isModelAvailable && !vault.contents.passwordHealth.isOutdated
     }
 
     var body: some View {
-        let _ = model.refreshCount
         HStack(spacing: 16) {
             ScanMark(state: isReady ? .success : .scanning).frame(width: 54, height: 54)
             VStack(alignment: .leading, spacing: 3) {
@@ -154,12 +165,12 @@ struct OverviewPage: View {
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
         Panel {
-            step("Camera", done: AVCaptureDevice.authorizationStatus(for: .video) == .authorized, action: "Allow") {
-                Task { _ = await AVCaptureDevice.requestAccess(for: .video); model.refresh() }
+            step("Camera", done: model.cameraAccess == .authorized, action: "Allow") {
+                Task { await model.requestCamera() }
             }
             PanelDivider()
-            step("Accessibility", detail: "Lets Sesame type your password at the lock screen.", done: MacLockScreen.canType, action: "Allow") {
-                MacLockScreen.requestTypingPermission()
+            step("Accessibility", detail: model.canType ? "Lets Sesame type your password at the lock screen." : "If it's already on in System Settings, remove Sesame with the minus button, then allow it again.", done: model.canType, action: "Allow") {
+                model.requestTyping()
             }
             PanelDivider()
             step("Your face", done: !vault.contents.profiles.isEmpty, action: "Add") { open(.faces) }

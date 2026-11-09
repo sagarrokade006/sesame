@@ -101,6 +101,20 @@ final class LockBadge {
         NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
     }
 
+    /// Where moving the pointer asks for another scan: the notch, or the top center of a screen without one.
+    static var hotZone: CGRect? {
+        guard let screen = targetScreen else { return nil }
+        let size = notchSize(on: screen) ?? CGSize(width: 240, height: 30)
+        let width = size.width + 40
+        let height = size.height + 12
+        return CGRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - height, width: width, height: height)
+    }
+
+    static var retryHint: String {
+        let hasNotch = targetScreen.flatMap(notchSize(on:)) != nil
+        return "Press Space or move the pointer to the \(hasNotch ? "notch" : "top of the screen")."
+    }
+
     private static func notchSize(on screen: NSScreen) -> CGSize? {
         guard screen.safeAreaInsets.top > 0,
               let left = screen.auxiliaryTopLeftArea?.width,

@@ -9,6 +9,8 @@ struct FaceCapture: Sendable {
     let vector: FaceVector
     /// Share of the frame's width the face fills.
     let widthFraction: Double
+    /// How far the face's center is from the frame's center, as a share of the frame.
+    let distanceFromCenter: Double
     let captureQuality: Double
 }
 
@@ -65,6 +67,7 @@ final class FaceReader: @unchecked Sendable {
             reading: reading,
             vector: vector,
             widthFraction: Double(face.boundingBox.width),
+            distanceFromCenter: hypot(Double(face.boundingBox.midX) - 0.5, Double(face.boundingBox.midY) - 0.5),
             captureQuality: Double(quality.results?.first?.faceCaptureQuality ?? 0)
         )
     }
