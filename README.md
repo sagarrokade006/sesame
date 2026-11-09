@@ -100,6 +100,12 @@ The version is `MARKETING_VERSION` from the Xcode project (such as `1.0`) plus t
 only touch the README or docs don't release. To release by hand, or to test the pipeline without publishing, run the
 **Release** workflow from the Actions tab and switch off **Publish**.
 
+### Releasing from a Mac
+
+When GitHub Actions isn't available, `tools/release_local.sh` does the same steps on your Mac and publishes with the
+GitHub CLI. Run it on `main` with everything pushed. The first time, it asks you to trust the signing certificate for
+code signing, with one command it prints.
+
 ### One-time setup
 
 Sesame is open source and released without an Apple Developer account, so two keys stand in for one. Run both from
