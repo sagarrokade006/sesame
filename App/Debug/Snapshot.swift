@@ -41,6 +41,20 @@ enum Snapshot {
             .split(separator: ",").compactMap { name in Page.allCases.first { $0.rawValue.lowercased() == name.lowercased() } }
             ?? Page.allCases
         let size = CGSize(width: MainView.size.width, height: Double(environment["SESAME_SNAPSHOT_HEIGHT"] ?? "") ?? MainView.size.height)
+        if environment["SESAME_SNAPSHOT_PAGES"]?.contains("badges") == true {
+            let badges: [(String, LockBadge.Content)] = [
+                ("scanning", .scanning),
+                ("blink", .blink(headMovementCounts: true)),
+                ("turn", .turn(.left, progress: 0.6)),
+                ("success", .success),
+                ("failure", .failure),
+                ("retry", .message("Try again", LockBadge.retryHint)),
+            ]
+            for (name, content) in badges {
+                let view = LockBadge.snapshot(content).background(Color.white).preferredColorScheme(.dark)
+                write(view, size: LockBadge.snapshotSize, to: folder.appendingPathComponent("notch-\(name).png"))
+            }
+        }
         if environment["SESAME_SNAPSHOT_PAGES"]?.contains("notch") == true {
             let enrollment = Enrollment()
             enrollment.simulateScan(share: 0.45)

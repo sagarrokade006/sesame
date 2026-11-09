@@ -187,7 +187,7 @@ final class UnlockController {
         if let challenge = attempt?.challenge, !challenge.isComplete {
             badge.show(.turn(challenge.direction, progress: challenge.progress))
         } else if attempt?.isWaitingForProof == true {
-            badge.show(.blink)
+            badge.show(.blink(headMovementCounts: !vault.contents.settings.requiresBlink))
         } else {
             badge.show(.scanning)
         }
@@ -238,7 +238,7 @@ final class UnlockController {
             endScan()
             if current.sawOwner {
                 // Recognized but never blinked: keep the prompt up and look again.
-                badge.show(.blink)
+                badge.show(.blink(headMovementCounts: !vault.contents.settings.requiresBlink))
                 afterMiss(.unproven)
             } else {
                 badge.hide()

@@ -16,7 +16,9 @@ Face unlock for your Mac. Sesame recognizes you when your Mac wakes and signs yo
    Security**, scroll down, and click **Open Anyway** next to the message about Sesame. You only do this once.
 3. Follow the checklist on Overview: allow the camera and Accessibility, scan your face, and save your Mac password.
 
-Sesame lives in the menu bar. Lock your Mac and look at the camera; blink if the notch asks you to.
+Sesame lives in the menu bar. When your Mac wakes, look at the camera and blink if the notch asks you to. If a scan
+doesn't work out, Sesame tries again on its own, and moving the pointer or trackpad anywhere starts another scan. You
+can always type your password as usual.
 
 ## Updates
 
@@ -45,7 +47,7 @@ from this repository can replace it.
 | ![Conditions](docs/conditions.png) | ![Activity](docs/activity.png) |
 | **Conditions.** Only unlock on trusted Wi-Fi, near your watch, or during set hours. | **Activity.** Every unlock and failed attempt. No images are kept. |
 | ![Help](docs/help.png) | ![About](docs/about.png) |
-| **Help.** Searchable answers to common problems. | **About.** Version and updates. |
+| **Help.** Searchable answers to common problems. | **About.** Version, what's new, and updates. |
 
 Adding a face happens in the notch, right under the camera you're looking at:
 
@@ -53,17 +55,28 @@ Adding a face happens in the notch, right under the camera you're looking at:
 
 At the lock screen, Sesame shows its progress in the notch too:
 
-| Scanning | Turn your head | Unlocked | Not recognized |
-|---|---|---|---|
-| ![Scanning](docs/notch-scanning.png) | ![Turn](docs/notch-turn.png) | ![Success](docs/notch-success.png) | ![Failure](docs/notch-failure.png) |
+| Scanning | Blink to unlock | Turn your head |
+|---|---|---|
+| ![Scanning](docs/notch-scanning.png) | ![Blink to unlock](docs/notch-blink.png) | ![Turn your head](docs/notch-turn.png) |
+| **Unlocked** | **Not recognized** | **Try again** |
+| ![Unlocked](docs/notch-success.png) | ![Not recognized](docs/notch-failure.png) | ![Try again](docs/notch-retry.png) |
+
+When Sesame recognizes you but hasn't seen you blink or move yet, it asks you to blink. A scan that sees you tries up
+to three more times on its own, and one that sees nobody tries once more. After that, move the pointer or trackpad to
+scan again. The keyboard can't start a scan: at the lock screen macOS hides key presses from every app, to protect your
+password.
 
 ## How it protects you
 
 - Touch ID or your Mac password is needed after every restart and every 48 hours by default.
 - Recognition needs several clear matches in a row, plus proof of life: a blink or a natural head movement, seen on a
   face that clearly matches. A partly covered face, or a photo held over someone else's face, can't unlock or vouch for
-  a blink. A face surrounded by a phone or picture frame is rejected.
-- Face unlock pauses after 5 failed attempts until the Mac is unlocked another way.
+  a blink. A face surrounded by a phone or picture frame is rejected. Turn on **Require a blink** in Security to accept
+  only a blink.
+- Face unlock pauses after 5 failed attempts until the Mac is unlocked another way. A suspected spoof never retries on
+  its own.
+- Sesame doesn't scan the moment your Mac locks, and ignores the pointer for 3 seconds after, so locking and walking
+  away doesn't unlock it again.
 - Adding a face, changing the saved password, and changing security settings need fresh authentication.
 - Optional conditions limit unlocking to trusted Wi-Fi, a connected Bluetooth device, or set hours.
 - Faces, password, history, and settings are stored in one AES-GCM encrypted file.
@@ -87,8 +100,9 @@ Debug builds never update themselves. To render every screen with sample data, w
 SESAME_SNAPSHOT_DIR=~/Desktop/sesame-shots path/to/Debug/Sesame.app/Contents/MacOS/Sesame
 ```
 
-Add `SESAME_SNAPSHOT_SCENARIO=new`, `locked`, `restart`, or `update` for other states. That's how the screenshots here
-are made.
+Add `SESAME_SNAPSHOT_SCENARIO=new`, `locked`, `keymissing`, `restart`, `update`, or `updated` for other states, and
+`SESAME_SNAPSHOT_PAGES=notch,badges` for the notch face scan and the lock-screen badges. That's how every screenshot
+here is made.
 
 ## Tests
 
@@ -129,8 +143,8 @@ pipeline without releasing.
 ### Signing, without a paid developer account
 
 Releases are signed with the free **Apple Development** certificate Xcode creates for your Apple ID (Xcode › Settings
-› Accounts). Because Apple issued it, macOS recognizes every release as the same app, so Accessibility, Input
-Monitoring, Camera, and the Keychain item holding Sesame's key all carry over between updates. Builds from Xcode use
+› Accounts). Because Apple issued it, macOS recognizes every release as the same app, so Camera,
+Accessibility, and the Keychain item holding Sesame's key all carry over between updates. Builds from Xcode use
 the same certificate and store their key in the same place, so you can switch between a build from Xcode and a
 release without losing your data. Both release paths refuse to publish a build signed any other way.
 

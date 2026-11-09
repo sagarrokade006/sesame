@@ -54,8 +54,8 @@ final class LockBadge {
         case success
         case failure
         case message(String, String)
-        /// Recognized, waiting for a blink or small head movement.
-        case blink
+        /// Recognized, waiting for a blink, or a small head movement when that counts too.
+        case blink(headMovementCounts: Bool)
 
         var usesWidePanel: Bool {
             switch self {
@@ -159,6 +159,21 @@ final class LockBadge {
         }
     }
 }
+
+#if DEBUG
+extension LockBadge {
+    /// For snapshots: the open badge under a typical notch, as it looks at the lock screen.
+    static func snapshot(_ content: Content) -> some View {
+        let state = State()
+        state.content = content
+        state.isOpen = true
+        state.notchSize = CGSize(width: 200, height: 32)
+        return LockBadgeView(state: state).frame(width: windowSize.width, height: windowSize.height)
+    }
+
+    static let snapshotSize = windowSize
+}
+#endif
 
 /// The black shape: flush with the top edge, flaring into it at the sides, and rounded at the bottom.
 struct NotchBody: Shape {
@@ -269,12 +284,14 @@ private struct BadgeContent: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
             }
-        case .blink:
+        case .blink(let headMovementCounts):
             HStack(spacing: 12) {
                 ScanMark(state: .scanning).frame(width: 36, height: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Blink to unlock").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                    Text("Or move your head a little").font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
+                    Text(headMovementCounts ? "Or move your head a little" : "Look at the camera and blink")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.7))
                 }
             }
         case .message(let title, let detail):
