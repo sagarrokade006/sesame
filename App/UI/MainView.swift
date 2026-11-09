@@ -95,7 +95,7 @@ struct MainView: View {
     @ViewBuilder
     private var content: some View {
         if page == .about {
-            AboutPage()
+            AboutPage(updates: model.updates)
         } else if !model.vault.isOpen {
             LockedPage(model: model)
         } else {
@@ -105,7 +105,7 @@ struct MainView: View {
             case .password: PasswordPage(model: model)
             case .security: SecurityPage(model: model)
             case .activity: ActivityPage(model: model)
-            case .about: AboutPage()
+            case .about: AboutPage(updates: model.updates)
             }
         }
     }
@@ -376,6 +376,8 @@ struct ActivityPage: View {
 }
 
 struct AboutPage: View {
+    let updates: UpdateService
+
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     }
@@ -387,6 +389,22 @@ struct AboutPage: View {
             }
             PanelDivider()
             PanelRow(title: "Face recognition", detail: "SFace by OpenCV, Apache License 2.0") { EmptyView() }
+            if updates.isEnabled {
+                PanelDivider()
+                PanelRow(title: "Updates", detail: updates.availableVersion.map { "Version \($0) is available" }) {
+                    Button(updates.availableVersion == nil ? "Check now" : "Update") { updates.checkNow() }
+                }
+                PanelDivider()
+                PanelRow(title: "Check automatically") {
+                    Toggle("", isOn: Binding(
+                        get: { updates.checksAutomatically },
+                        set: { updates.checksAutomatically = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(Theme.mint)
+                }
+            }
         }
         Text("Sesame is a convenience tool and isn't as secure as Face ID or Touch ID. A webcam sees a flat image, and Sesame signs in by typing your saved password.")
             .font(.system(size: 12))

@@ -8,6 +8,10 @@ Face unlock for your Mac. Sesame recognizes you when your Mac wakes and signs yo
 > Sesame is a convenience tool and isn't as secure as Face ID or Touch ID. A Mac webcam sees a flat image, and macOS
 > has no way for an app to approve a login, so Sesame types your saved password at the lock screen.
 
+## Install
+
+Download the latest `Sesame-x.y.z.dmg` from [Releases](https://github.com/sagarrokade006/sesame/releases/latest), open it, and drag Sesame to Applications. Sesame checks for updates daily and lets you install them from inside the app.
+
 ## Requirements
 
 - macOS 15 or later
@@ -28,6 +32,12 @@ Face unlock for your Mac. Sesame recognizes you when your Mac wakes and signs yo
 - Faces, password, history, and settings are stored in one AES-GCM encrypted file.
 - Only real cameras are used. Virtual cameras are ignored.
 
+## Releasing
+
+Push a version tag, such as `git tag v0.2.0 && git push origin v0.2.0`. GitHub Actions tests the code, builds the DMG, signs the update, and publishes it to Releases.
+
+Before the first release, run `swift tools/setup_update_key.swift` once and commit the change to `Config/Info.plist`. To sign and notarize, add the `DEVELOPER_ID_P12`, `DEVELOPER_ID_P12_PASSWORD`, `APPLE_ID`, `APPLE_APP_PASSWORD`, and `APPLE_TEAM_ID` secrets. Without them, builds are ad-hoc signed.
+
 ## Tests
 
 ```bash
@@ -40,3 +50,5 @@ The face recognition model is [SFace](https://huggingface.co/opencv/face_recogni
 Apache License 2.0. Its license is in `App/Models/SFace-LICENSE.txt`, and `tools/convert_model.py` converts it for Core ML.
 
 The lock-screen animation uses private macOS window server APIs, which may change in any macOS update.
+
+Updates use [Sparkle](https://sparkle-project.org). Sesame is released under the [MIT License](LICENSE).

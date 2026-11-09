@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		E50000000000000000000001 /* SesameCore in Frameworks */ = {isa = PBXBuildFile; productRef = E50000000000000000000002 /* SesameCore */; };
+		E50000000000000000000014 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = E50000000000000000000015 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E50000000000000000000001 /* SesameCore in Frameworks */,
+				E50000000000000000000014 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +73,7 @@
 			name = Sesame;
 			packageProductDependencies = (
 				E50000000000000000000002 /* SesameCore */,
+				E50000000000000000000015 /* Sparkle */,
 			);
 			productName = Sesame;
 			productReference = E50000000000000000000003 /* Sesame.app */;
@@ -97,6 +100,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				E5000000000000000000000E /* XCLocalSwiftPackageReference "Packages/SesameCore" */,
+				E50000000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E50000000000000000000007 /* Products */;
@@ -172,6 +176,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sesame uses the camera on this Mac to recognize your face.";
@@ -197,6 +202,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sesame uses the camera on this Mac to recognize your face.";
@@ -241,10 +247,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		E50000000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		E50000000000000000000002 /* SesameCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SesameCore;
+		};
+		E50000000000000000000015 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E50000000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

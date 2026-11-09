@@ -54,6 +54,34 @@ private enum VaultKeychain {
 
     static func delete() {
         SecItemDelete(baseQuery as CFDictionary)
+        SecItemDelete(sharedQuery as CFDictionary)
+    }
+
+    /// Builds distributed outside Xcode don't carry the entitlement the protected Keychain needs, so they use the
+    /// regular login Keychain and ask for Touch ID or the Mac password themselves before reading the key.
+    private static var sharedQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "vault-shared",
+        ]
+    }
+
+    static func loadOrCreateWithoutEntitlement(mayCreate: Bool) throws -> SymmetricKey {
+        var query = sharedQuery
+        query[kSecReturnData as String] = true
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data { return SymmetricKey(data: data) }
+        guard status == errSecItemNotFound else { throw VaultError.keychain(status) }
+        guard mayCreate else { throw VaultError.keyMissing }
+
+        let key = SymmetricKey(size: .bits256)
+        var attributes = sharedQuery
+        attributes[kSecValueData as String] = key.withUnsafeBytes { Data($0) }
+        let added = SecItemAdd(attributes as CFDictionary, nil)
+        guard added == errSecSuccess else { throw VaultError.keychain(added) }
+        return key
     }
 
     /// Prompts for Touch ID or the Mac password. A brand-new key is read back so creating one also requires approval.
@@ -112,9 +140,19 @@ final class Vault {
 
     func open() async throws {
         let mayCreate = !fileExists
-        let opened = try await Task.detached(priority: .userInitiated) {
-            try VaultKeychain.loadOrCreate(reason: "open Sesame", mayCreate: mayCreate)
-        }.value
+        let opened: SymmetricKey
+        do {
+            opened = try await Task.detached(priority: .userInitiated) {
+                try VaultKeychain.loadOrCreate(reason: "open Sesame", mayCreate: mayCreate)
+            }.value
+        } catch VaultError.keychain(errSecMissingEntitlement) {
+            guard (try? await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "open Sesame")) == true else {
+                throw VaultError.keychain(errSecUserCanceled)
+            }
+            opened = try await Task.detached(priority: .userInitiated) {
+                try VaultKeychain.loadOrCreateWithoutEntitlement(mayCreate: mayCreate)
+            }.value
+        }
 
         var loaded = VaultContents()
         if fileExists {

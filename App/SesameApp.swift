@@ -27,6 +27,7 @@ struct SesameApp: App {
 final class AppModel {
     let vault = Vault()
     let controller: UnlockController
+    let updates = UpdateService()
     private(set) var errorMessage: String?
     /// Bumped to make views re-read system permission state, which SwiftUI can't observe.
     private(set) var refreshCount = 0
@@ -72,6 +73,12 @@ private struct MenuPanel: View {
                 Text(model.vault.isTrusted ? "On" : "Locked")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+            }
+            if let version = model.updates.availableVersion {
+                Button("Update to \(version)") { model.updates.checkNow() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.mint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack {
                 Button("Open Sesame") {
