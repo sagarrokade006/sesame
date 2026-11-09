@@ -317,14 +317,6 @@ struct OverviewPage: View {
         if case .setupNeeded = status {
             setup
         } else {
-            if model.permissions.space.state != .ready {
-                Banner(symbol: "space", tint: Theme.sky, title: "Let Space start a scan",
-                       detail: model.permissions.space.state == .needsRestart
-                           ? "Turn Sesame on under Input Monitoring in System Settings, then restart Sesame."
-                           : "Allow Input Monitoring so pressing Space on the lock screen scans again. Moving the pointer to the notch works without it.") {
-                    PermissionButtons(state: model.permissions.space.state, allow: model.permissions.askForSpace, openSettings: model.permissions.openSpaceSettings)
-                }
-            }
             stats
             recent
         }
@@ -579,14 +571,6 @@ struct SecurityPage: View {
 
     private var vault: Vault { model.vault }
 
-    private var spaceDetail: String {
-        switch model.permissions.space.state {
-        case .ready: return "Starts another scan."
-        case .needsPermission: return "Needs Input Monitoring, so Sesame can see the Space bar while the Mac is locked."
-        case .needsRestart: return "Turn Sesame on under Input Monitoring in System Settings, then restart Sesame."
-        }
-    }
-
     private func binding<Value>(_ path: WritableKeyPath<SecuritySettings, Value>) -> Binding<Value> {
         Binding(
             get: { vault.contents.settings[keyPath: path] },
@@ -606,6 +590,10 @@ struct SecurityPage: View {
                     Switch(isOn: binding(\.requiresAttention))
                 }
                 RowDivider()
+                SettingRow(icon: "eye.slash.fill", tint: Theme.violet, title: "Require a blink", detail: "Only a blink proves you're really there. When off, a natural head movement also counts.") {
+                    Switch(isOn: binding(\.requiresBlink))
+                }
+                RowDivider()
                 SettingRow(icon: "bolt.fill", tint: Theme.amber, title: "Scan as soon as the Mac locks", detail: "Faster, but may unlock again if you're still in view.") {
                     Switch(isOn: binding(\.scansWhenLocking))
                 }
@@ -613,15 +601,9 @@ struct SecurityPage: View {
 
             SectionHeader(text: "Scan again")
             Card {
-                SettingRow(icon: "space", tint: Theme.sky, title: "Press Space at the lock screen", detail: spaceDetail) {
-                    if model.permissions.space.state == .ready {
-                        Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(Theme.mint)
-                    } else {
-                        PermissionButtons(state: model.permissions.space.state, allow: model.permissions.askForSpace, openSettings: model.permissions.openSpaceSettings)
-                    }
-                }
+                SettingRow(icon: "arrow.clockwise", tint: Theme.sky, title: "Retries on its own", detail: "Up to three more tries when it sees you but you haven't blinked, and one when it didn't see anyone.")
                 RowDivider()
-                SettingRow(icon: "cursorarrow.motionlines", tint: Theme.sky, title: "Move the pointer to the notch", detail: "Always works, no permission needed.")
+                SettingRow(icon: "cursorarrow.motionlines", tint: Theme.sky, title: "Move the pointer to scan again", detail: "Anywhere on screen, once those tries are used up. The keyboard can't be used: macOS hides key presses from every app at the lock screen.")
             }
 
             SectionHeader(text: "Trust")

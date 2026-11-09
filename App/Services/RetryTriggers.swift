@@ -1,96 +1,45 @@
 import AppKit
-import IOKit.hid
 
-/// Lets someone ask for another scan at the lock screen, by pressing Space or moving the pointer to the top of the screen.
-/// Runs only while the Mac is locked.
+/// Asks for another scan when someone moves the pointer or trackpad at the lock screen, anywhere on screen. Runs only
+/// while the Mac is locked.
+///
+/// The keyboard can't be used: the lock screen turns on Secure Event Input, which stops every app, Sesame included,
+/// from seeing key presses. The pointer's position is still readable, and moving it is a natural "I'm here".
 @MainActor
 final class RetryTriggers {
-    /// Holds what the C callback needs. Only ever used to hop back to the main actor.
-    private final class SpaceHandler: @unchecked Sendable {
-        let action: @Sendable () -> Void
-        init(_ action: @escaping @Sendable () -> Void) { self.action = action }
-    }
-
-    /// Reading the Space bar at the lock screen needs Input Monitoring.
-    nonisolated static var canHearSpace: Bool {
-        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
-    }
-
-    /// Shows the system prompt the first time. Returns false once macOS has already been answered.
-    @discardableResult
-    nonisolated static func requestSpaceAccess() -> Bool {
-        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-    }
-
     var onRequest: (() -> Void)?
-    /// The area of the screen that counts as "at the notch".
-    var hotZone: (() -> CGRect?)?
 
-    private var pointerTimer: Timer?
-    private var wasInHotZone = false
-    private var manager: IOHIDManager?
-    private var spaceHandler: SpaceHandler?
+    /// How far the pointer must move between checks to count, so a still hand or a jittery trackpad doesn't.
+    private static let movementThreshold: CGFloat = 8
+    private var timer: Timer?
+    private var lastLocation: NSPoint?
+    private var ignoreUntil: Date = .distantPast
 
-    func start() {
-        guard pointerTimer == nil else { return }
-        wasInHotZone = hotZone?()?.contains(NSEvent.mouseLocation) ?? false
+    /// `ignoringFor` covers the moments right after locking, so locking with the mouse and walking off doesn't scan.
+    func start(ignoringFor delay: TimeInterval = 0) {
+        ignoreUntil = max(ignoreUntil, Date().addingTimeInterval(delay))
+        guard timer == nil else { return }
+        lastLocation = NSEvent.mouseLocation
         let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkPointer() }
         }
         RunLoop.main.add(timer, forMode: .common)
-        pointerTimer = timer
-        startListeningForSpace()
+        self.timer = timer
     }
 
     func stop() {
-        pointerTimer?.invalidate()
-        pointerTimer = nil
-        if let manager {
-            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
-            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        }
-        manager = nil
-        spaceHandler = nil
+        timer?.invalidate()
+        timer = nil
+        lastLocation = nil
+        ignoreUntil = .distantPast
     }
 
-    /// Fires on arrival only, so resting the pointer there doesn't keep rescanning.
     private func checkPointer() {
-        let isInside = hotZone?()?.contains(NSEvent.mouseLocation) ?? false
-        if isInside, !wasInHotZone { onRequest?() }
-        wasInHotZone = isInside
-    }
-
-    /// The login window blocks ordinary key monitoring, so this reads the keyboard device and looks only at the
-    /// Space bar. If macOS hasn't granted access, the pointer still works.
-    private func startListeningForSpace() {
-        guard manager == nil, Self.canHearSpace else { return }
-
-        let device = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        IOHIDManagerSetDeviceMatching(device, [
-            kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop,
-            kIOHIDDeviceUsageKey: kHIDUsage_GD_Keyboard,
-        ] as CFDictionary)
-
-        let handler = SpaceHandler { [weak self] in
-            Task { @MainActor in self?.onRequest?() }
+        let location = NSEvent.mouseLocation
+        defer { lastLocation = location }
+        guard let lastLocation, Date() >= ignoreUntil else { return }
+        if hypot(location.x - lastLocation.x, location.y - lastLocation.y) >= Self.movementThreshold {
+            onRequest?()
         }
-        spaceHandler = handler
-        IOHIDManagerRegisterInputValueCallback(device, { context, _, _, value in
-            let element = IOHIDValueGetElement(value)
-            guard let context,
-                  IOHIDElementGetUsagePage(element) == UInt32(kHIDPage_KeyboardOrKeypad),
-                  IOHIDElementGetUsage(element) == UInt32(kHIDUsage_KeyboardSpacebar),
-                  IOHIDValueGetIntegerValue(value) == 1
-            else { return }
-            Unmanaged<SpaceHandler>.fromOpaque(context).takeUnretainedValue().action()
-        }, Unmanaged.passUnretained(handler).toOpaque())
-
-        IOHIDManagerScheduleWithRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
-        guard IOHIDManagerOpen(device, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
-            IOHIDManagerUnscheduleFromRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
-            spaceHandler = nil
-            return
-        }
-        manager = device
     }
 }

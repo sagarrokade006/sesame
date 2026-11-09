@@ -41,7 +41,7 @@ from this repository can replace it.
 | ![First run](docs/setup.png) | ![Faces](docs/faces.png) |
 | **Setup.** A checklist for permissions, your face, and your password. | **Faces.** Add a face for glasses or a hat, and switch faces on and off. |
 | ![Password](docs/password.png) | ![Security](docs/security.png) |
-| **Password.** Saved encrypted, checked with macOS, typed only at the lock screen. | **Security.** Head-turn challenge, attention, Touch ID interval, match strictness. |
+| **Password.** Saved encrypted, checked with macOS, typed only at the lock screen. | **Security.** Head-turn challenge, attention, blink only, Touch ID interval, match strictness. |
 | ![Conditions](docs/conditions.png) | ![Activity](docs/activity.png) |
 | **Conditions.** Only unlock on trusted Wi-Fi, near your watch, or during set hours. | **Activity.** Every unlock and failed attempt. No images are kept. |
 | ![Help](docs/help.png) | ![About](docs/about.png) |

@@ -3,6 +3,15 @@
 Every release of Sesame, newest first. The app shows the latest entry after it updates, and the update window shows it
 before you install.
 
+## 1.0.2
+
+- Sesame now tries again on its own: up to three more times when it sees you but you haven't blinked yet, and once
+  when it didn't see anyone.
+- Moving the pointer or trackpad anywhere on screen starts another scan, not just at the notch.
+- Removed Space as a way to scan again, along with its Input Monitoring permission. At the lock screen macOS hides key
+  presses from every app, so it could never work.
+- New in Security: Require a blink, for when only a blink should prove you're there.
+
 ## 1.0.1
 
 - Face unlock now needs a clear view of your face. A partly covered face, or a photo held over someone else's face,

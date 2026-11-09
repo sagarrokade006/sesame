@@ -132,6 +132,39 @@ private struct Run {
         #expect(!run.unlocked)
     }
 
+    @Test func blinkOnlyIgnoresHeadMovement() {
+        var rules = UnlockAttempt.Rules()
+        rules.requiresBlink = true
+        var run = Run(rules: rules)
+        for step in 0..<20 {
+            let yaw = Double(step % 10) * 0.04
+            run.frame(owner, yaw: yaw, shift: yaw * 0.6)
+        }
+        #expect(!run.unlocked)
+        run.blink(owner)
+        run.frames(owner, count: 3)
+        #expect(run.unlocked)
+    }
+
+    @Test func headMovementCountsByDefault() {
+        var run = Run()
+        for step in 0..<20 {
+            let yaw = Double(step % 10) * 0.04
+            run.frame(owner, yaw: yaw, shift: yaw * 0.6)
+        }
+        run.frames(owner, count: 3)
+        #expect(run.unlocked)
+    }
+
+    @Test func remembersSeeingTheOwner() {
+        var run = Run()
+        #expect(!run.attempt.sawOwner)
+        run.frames(.doubtful, count: 5)
+        #expect(!run.attempt.sawOwner)
+        run.frame(owner)
+        #expect(run.attempt.sawOwner)
+    }
+
     @Test func aRecognizedStillFaceAsksForABlink() {
         var run = Run()
         run.frames(owner, count: 10)

@@ -10,6 +10,8 @@ public struct UnlockAttempt: Sendable {
         public var duration: TimeInterval = 6
         /// A frame that waited longer than this to be judged says nothing about who is there now.
         public var maximumFrameAge: TimeInterval = 0.5
+        /// Only a blink proves the person is there; a natural head movement doesn't count.
+        public var requiresBlink = false
 
         public init() {}
     }
@@ -28,7 +30,10 @@ public struct UnlockAttempt: Sendable {
 
     private let rules: Rules
     private let startedAt: TimeInterval
-    private var judge = LivenessJudge()
+    private var judge: LivenessJudge
+    /// Whether any frame clearly matched the owner, so a scan that runs out of time can tell "nobody there" from
+    /// "you, but no blink yet".
+    public private(set) var sawOwner = false
     public private(set) var challenge: TurnChallenge?
     private var matchStreak = 0
     /// Recognized and attentive, only missing proof of life. Worth telling the person to blink.
@@ -39,6 +44,7 @@ public struct UnlockAttempt: Sendable {
     public init(rules: Rules = Rules(), challenge: TurnChallenge? = nil, startedAt: TimeInterval) {
         self.rules = rules
         self.challenge = challenge
+        judge = LivenessJudge(acceptsHeadMovement: !rules.requiresBlink)
         self.startedAt = startedAt
     }
 
@@ -83,6 +89,7 @@ public struct UnlockAttempt: Sendable {
         }
 
         doubtStartedAt = nil
+        sawOwner = true
         guard !rules.requiresAttention || reading.isAttentive() else {
             matchStreak = 0
             return .keepWatching

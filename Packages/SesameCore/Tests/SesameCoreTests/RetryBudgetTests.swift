@@ -39,4 +39,19 @@ import Testing
         #expect(!budget.allowsRequestedScan(at: 11))
         #expect(budget.allowsRequestedScan(at: 11.5))
     }
+
+    @Test func someoneRecognizedButUnprovenGetsThreeRetries() {
+        var budget = RetryBudget()
+        let retries = (0..<5).map { _ in budget.shouldRetryAutomatically(after: .unproven) }
+        #expect(retries == [true, true, true, false, false])
+    }
+
+    @Test func retriesShareOneBudgetPerLock() {
+        var budget = RetryBudget()
+        _ = budget.shouldRetryAutomatically(after: .noFace)
+        let anotherNoFace = budget.shouldRetryAutomatically(after: .noFace)
+        let unproven = budget.shouldRetryAutomatically(after: .unproven)
+        #expect(!anotherNoFace)
+        #expect(unproven)
+    }
 }

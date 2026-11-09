@@ -15,9 +15,9 @@ struct HelpPage: View {
 
     private let unlocking = [
         Topic(question: "When does Sesame scan?", answer: "When your Mac wakes: opening the lid, waking the display, or a screen saver ending."),
-        Topic(question: "I locked my Mac and the screen stayed on", answer: "Sesame doesn't scan right away, so it can't unlock behind you as you walk off. Press Space or move the pointer to the notch when you're ready. To scan immediately instead, turn on \"Scan as soon as the Mac locks\" in Security."),
-        Topic(question: "The first scan failed. What now?", answer: "Sesame tries once more by itself. After that, press Space or move the pointer to the notch to scan again. You can always type your password as usual."),
-        Topic(question: "Why does it ask me to blink or move?", answer: "Sesame needs proof you're a real person and not a photo, so it watches for a natural blink or a small head movement."),
+        Topic(question: "I locked my Mac and the screen stayed on", answer: "Sesame doesn't scan right away, so it can't unlock behind you as you walk off. Move the pointer or trackpad when you're ready. To scan immediately instead, turn on \"Scan as soon as the Mac locks\" in Security."),
+        Topic(question: "The first scan failed. What now?", answer: "Sesame tries again by itself: up to three times when it sees you but you haven't blinked, once when it didn't see anyone. After that, move the pointer or trackpad to scan again. You can always type your password as usual."),
+        Topic(question: "Why does it ask me to blink or move?", answer: "Sesame needs proof you're a real person and not a photo, so it watches for a natural blink or a small head movement, seen while your face is clearly visible. To accept only a blink, turn on Require a blink in Security."),
     ]
 
     private let trouble = [
@@ -25,7 +25,7 @@ struct HelpPage: View {
         Topic(question: "\"Your saved password looks out of date\"", answer: "You probably changed your Mac password. Save the new one on the Password page."),
         Topic(question: "It stopped working after a day or two", answer: "For safety, Sesame asks for Touch ID or your password every 48 hours and after every restart. Open Sesame and choose Unlock. You can change this in Security."),
         Topic(question: "Accessibility is on, but Sesame doesn't see it", answer: "macOS can keep an old permission after an app is updated. In System Settings, open Privacy & Security, then Accessibility. Select Sesame, remove it with the minus button, then choose Allow in Sesame again."),
-        Topic(question: "Space doesn't start a scan", answer: "Sesame needs Input Monitoring to see the Space bar while your Mac is locked. Choose Allow on Overview or Security, or turn Sesame on in System Settings under Privacy & Security, then Input Monitoring. Moving the pointer to the notch always works."),
+        Topic(question: "Pressing a key doesn't start a scan", answer: "At the lock screen macOS hides every key press from apps, to protect your password, so Sesame can't see them. Move the pointer or trackpad instead."),
         Topic(question: "\"Sesame's key is missing\"", answer: "Sesame's data was saved by a different build, such as one built in Xcode, and this one can't reach its key. Choose Start over on the locked screen and set up your face and password again. Releases from GitHub always share one key, so updating doesn't cause this."),
         Topic(question: "It recognizes me but the Mac stays locked", answer: "macOS stops an app from typing if its Accessibility permission changed while it was running, and keeps blocking it until the app restarts. Sesame shows Restart Sesame when this happens. Quit Sesame from the menu bar and open it again."),
         Topic(question: "It doesn't recognize me", answer: "Face the screen in good light with your eyes open. If your look has changed, add another face on the Faces page."),

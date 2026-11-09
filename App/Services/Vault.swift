@@ -12,6 +12,8 @@ struct SecuritySettings: Codable, Equatable {
     var trustHours = TrustWindow.defaultHours
     var matchRule = MatchRule()
     var unlockRules = UnlockRules()
+    /// Only a blink proves you're there; a natural head movement doesn't count.
+    var requiresBlink = false
 
     init() {}
 
@@ -25,6 +27,7 @@ struct SecuritySettings: Codable, Equatable {
         trustHours = try saved.decodeIfPresent(Int.self, forKey: .trustHours) ?? defaults.trustHours
         matchRule = try saved.decodeIfPresent(MatchRule.self, forKey: .matchRule) ?? defaults.matchRule
         unlockRules = try saved.decodeIfPresent(UnlockRules.self, forKey: .unlockRules) ?? defaults.unlockRules
+        requiresBlink = try saved.decodeIfPresent(Bool.self, forKey: .requiresBlink) ?? defaults.requiresBlink
     }
 }
 

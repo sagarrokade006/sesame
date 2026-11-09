@@ -31,7 +31,6 @@ final class UnlockController {
 
     init(vault: Vault) {
         self.vault = vault
-        triggers.hotZone = { LockBadge.hotZone }
         triggers.onRequest = { [weak self] in self?.requestScan() }
         listen()
     }
@@ -68,7 +67,7 @@ final class UnlockController {
 
     private func didLock() {
         retry.reset()
-        triggers.start()
+        triggers.start(ignoringFor: 3)
         if vault.contents.settings.scansWhenLocking {
             scheduleScan()
             return
@@ -82,19 +81,25 @@ final class UnlockController {
         }
     }
 
-    /// Space or the pointer reaching the notch.
+    /// The pointer or trackpad moving at the lock screen.
     private func requestScan() {
         guard canScan, retry.allowsRequestedScan(at: ProcessInfo.processInfo.systemUptime) else { return }
         followUp?.cancel()
         beginScan()
     }
 
-    /// Tries once more by itself, then explains how to ask for another scan.
+    /// Tries again by itself, a few times when it clearly saw you, then explains how to ask for another scan.
     private func afterMiss(_ miss: RetryBudget.Miss) {
         let tryAgain = retry.shouldRetryAutomatically(after: miss)
+        scanLog.notice("miss \(String(describing: miss), privacy: .public) retrying=\(tryAgain, privacy: .public)")
         followUp?.cancel()
         followUp = Task {
-            try? await Task.sleep(for: miss == .noFace ? .milliseconds(400) : .milliseconds(1700))
+            let pause: Duration = switch miss {
+            case .noFace: .milliseconds(400)
+            case .unproven: .milliseconds(500)
+            case .stranger, .spoof: .milliseconds(1700)
+            }
+            try? await Task.sleep(for: pause)
             guard !Task.isCancelled, canScan else { return }
             if tryAgain {
                 beginScan()
@@ -162,6 +167,7 @@ final class UnlockController {
         let settings = vault.contents.settings
         var rules = UnlockAttempt.Rules()
         rules.requiresAttention = settings.requiresAttention
+        rules.requiresBlink = settings.requiresBlink
         let challenge = settings.usesTurnChallenge ? TurnChallenge(direction: TurnDirection.allCases.randomElement() ?? .left) : nil
         if challenge != nil { rules.duration = 9 }
 
@@ -230,8 +236,14 @@ final class UnlockController {
             fail(.spoof, note: "A screen or card shape surrounded the face.")
         case .expired:
             endScan()
-            badge.hide()
-            afterMiss(.noFace)
+            if current.sawOwner {
+                // Recognized but never blinked: keep the prompt up and look again.
+                badge.show(.blink)
+                afterMiss(.unproven)
+            } else {
+                badge.hide()
+                afterMiss(.noFace)
+            }
         }
     }
 

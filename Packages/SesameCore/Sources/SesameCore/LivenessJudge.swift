@@ -66,8 +66,12 @@ public struct LivenessJudge: Sendable {
 
     private var turnHistory: [(time: TimeInterval, yaw: Double, shift: Double)] = []
     private var sawDepth = false
+    private let acceptsHeadMovement: Bool
 
-    public init() {}
+    /// `acceptsHeadMovement` false means only a blink proves life.
+    public init(acceptsHeadMovement: Bool = true) {
+        self.acceptsHeadMovement = acceptsHeadMovement
+    }
 
     /// Forgets proof of life but not spoof evidence, which must not be escaped by changing faces.
     public mutating func forgetProof() {
@@ -106,7 +110,7 @@ public struct LivenessJudge: Sendable {
             trackBlink(reading)
             trackDepth(reading)
         }
-        return sawBlink || sawDepth ? .alive : .undecided
+        return sawBlink || (acceptsHeadMovement && sawDepth) ? .alive : .undecided
     }
 
     private mutating func trackBlink(_ reading: FaceReading) {

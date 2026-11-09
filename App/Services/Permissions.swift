@@ -5,7 +5,7 @@ import Observation
 import OSLog
 import SesameCore
 
-/// The three macOS permissions Sesame depends on, watched for the whole life of the app.
+/// The macOS permissions Sesame depends on, watched for the whole life of the app.
 @MainActor
 @Observable
 final class Permissions {
@@ -14,8 +14,6 @@ final class Permissions {
     private(set) var camera = AVCaptureDevice.authorizationStatus(for: .video)
     /// Accessibility plus permission to post keyboard events, so the password reaches the lock screen.
     private(set) var typing: PermissionGate
-    /// Input Monitoring, so Space can start a scan at the lock screen.
-    private(set) var space: PermissionGate
 
     /// Set while the person is off approving something, so Sesame only comes forward when they expect it.
     @ObservationIgnored private var isWaiting = false
@@ -25,11 +23,9 @@ final class Permissions {
 
     private init() {
         typing = PermissionGate(grantedAtLaunch: Self.canType)
-        space = PermissionGate(grantedAtLaunch: Self.canHearSpace)
     }
 
     nonisolated static var canType: Bool { AXIsProcessTrusted() && CGPreflightPostEventAccess() }
-    nonisolated static var canHearSpace: Bool { RetryTriggers.canHearSpace }
 
     /// Whether a typed password will actually reach the lock screen.
     var isTypingReady: Bool { typing.state == .ready }
@@ -52,20 +48,15 @@ final class Permissions {
         let cameraNow = AVCaptureDevice.authorizationStatus(for: .video)
         let accessibility = AXIsProcessTrusted()
         let postEvents = CGPreflightPostEventAccess()
-        let listen = Self.canHearSpace
 
         let gained = (cameraNow == .authorized && camera != .authorized)
             || (accessibility && postEvents && typing.state != .ready)
-            || (listen && space.state != .ready)
         if cameraNow != camera { camera = cameraNow }
         var nextTyping = typing
         nextTyping.observe(granted: accessibility && postEvents)
         if nextTyping != typing { typing = nextTyping }
-        var nextSpace = space
-        nextSpace.observe(granted: listen)
-        if nextSpace != space { space = nextSpace }
 
-        let summary = "camera=\(cameraNow.rawValue) accessibility=\(accessibility) postEvents=\(postEvents) inputMonitoring=\(listen) typing=\(typing.state) space=\(space.state)"
+        let summary = "camera=\(cameraNow.rawValue) accessibility=\(accessibility) postEvents=\(postEvents) typing=\(typing.state)"
         if summary != lastSummary {
             lastSummary = summary
             log.notice("\(summary, privacy: .public)")
@@ -96,16 +87,7 @@ final class Permissions {
         typing.noteAsked(grantedNow: Self.canType)
     }
 
-    func askForSpace() {
-        isWaiting = true
-        if !RetryTriggers.requestSpaceAccess() {
-            Self.openSettings("Privacy_ListenEvent")
-        }
-        space.noteAsked(grantedNow: Self.canHearSpace)
-    }
-
     func openTypingSettings() { Self.openSettings("Privacy_Accessibility") }
-    func openSpaceSettings() { Self.openSettings("Privacy_ListenEvent") }
 
     /// Keystrokes went nowhere although macOS says they're allowed.
     func noteTypingBlocked() {
@@ -143,7 +125,6 @@ final class Permissions {
     func pretend(granted: Bool) {
         camera = granted ? .authorized : .notDetermined
         typing = PermissionGate(grantedAtLaunch: granted)
-        space = PermissionGate(grantedAtLaunch: granted)
     }
 
     /// Shows the "Open Settings / Restart" state for both permissions.
@@ -151,8 +132,6 @@ final class Permissions {
         camera = .authorized
         typing = PermissionGate(grantedAtLaunch: false)
         typing.noteAsked(grantedNow: false)
-        space = PermissionGate(grantedAtLaunch: false)
-        space.noteAsked(grantedNow: false)
     }
     #endif
 }
