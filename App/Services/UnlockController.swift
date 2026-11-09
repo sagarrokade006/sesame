@@ -28,6 +28,12 @@ final class UnlockController {
     @ObservationIgnored private var retry = RetryBudget()
     @ObservationIgnored private var followUp: Task<Void, Never>?
     @ObservationIgnored private var isSleeping = false
+    @ObservationIgnored private var watchdog: ScanWatchdog?
+    @ObservationIgnored private var watchdogTimer: Timer?
+    @ObservationIgnored private var pendingScan: Task<Void, Never>?
+    @ObservationIgnored private var darkness = DarknessJudge()
+    /// How many failed attempts the last alert covered, so one batch is only announced once.
+    @ObservationIgnored private var alertedFailures = 0
 
     init(vault: Vault) {
         self.vault = vault
@@ -57,12 +63,26 @@ final class UnlockController {
             controller.isSleeping = false
             controller.scheduleScan()
         }
-        watch(workspace, NSWorkspace.willSleepNotification) { $0.isSleeping = true }
+        watch(workspace, NSWorkspace.willSleepNotification) { controller in
+            controller.isSleeping = true
+            controller.standDown()
+        }
+        // Nobody is looking at a dark display, and the camera light shouldn't stay on behind a closed lid.
+        watch(workspace, NSWorkspace.screensDidSleepNotification) { $0.standDown() }
     }
 
     private var canScan: Bool {
         MacLockScreen.isLocked && attempt == nil && !isConfirmingEntry && vault.isTrusted && vault.hasPassword
             && vault.contents.profiles.contains(where: \.isActive)
+    }
+
+    /// Stops everything in flight without counting it as a failed attempt.
+    private func standDown() {
+        pendingScan?.cancel()
+        followUp?.cancel()
+        if attempt != nil { scanLog.notice("scan stood down") }
+        endScan()
+        badge.hide()
     }
 
     private func didLock() {
@@ -117,10 +137,14 @@ final class UnlockController {
             counter.reset()
             retry.reset()
             followUp?.cancel()
+            pendingScan?.cancel()
             triggers.stop()
             endScan()
-            // After a face unlock, `confirmEntry` keeps the checkmark up briefly instead.
-            if !isConfirmingEntry { badge.hide() }
+            // After a face unlock, `confirmEntry` keeps the checkmark up briefly instead, and alerts itself.
+            if !isConfirmingEntry {
+                badge.hide()
+                alertAboutFailedAttempts()
+            }
         }
     }
 
@@ -131,14 +155,19 @@ final class UnlockController {
         lastTriggerAt = now
         retry.reset()
         followUp?.cancel()
-        Task {
+        pendingScan?.cancel()
+        pendingScan = Task {
             try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
             beginScan()
         }
     }
 
     private var blocker: LockBadge.Content? {
         if !reader.isReady { return .message("Face unlock unavailable", "The recognition model is missing.") }
+        if vault.contents.settings.isPaused() { return .message("Face unlock is paused", "Turn it back on from Sesame in the menu bar.") }
+        if Permissions.shared.camera != .authorized { return .message("Sesame can't use the camera", "Open Sesame and allow Camera.") }
+        if CameraFeed.trustedDevice() == nil { return .message("No camera found", "Connect a camera, or enter your password.") }
         if vault.contents.passwordHealth.isOutdated { return .message("Sesame paused", "Your saved password looks out of date.") }
         if counter.isExhausted { return .message("Sesame paused", "Too many attempts. Enter your password.") }
         if Permissions.shared.typing.state == .needsPermission {
@@ -173,13 +202,55 @@ final class UnlockController {
 
         let id = UUID()
         scanID = id
-        attempt = UnlockAttempt(rules: rules, challenge: challenge, startedAt: ProcessInfo.processInfo.systemUptime)
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        attempt = UnlockAttempt(rules: rules, challenge: challenge, startedAt: startedAt)
+        watchdog = ScanWatchdog(startedAt: startedAt, duration: rules.duration)
+        startWatchdog()
         showProgress()
 
         let reader = self.reader
+        darkness = DarknessJudge()
         camera.start { [weak self] pixels, time in
             let capture = reader.read(pixels, at: time)
-            Task { @MainActor in self?.receive(capture, at: time, scan: id) }
+            let brightness = capture == nil ? FaceReader.brightness(of: pixels) : nil
+            Task { @MainActor in self?.receive(capture, brightness: brightness, at: time, scan: id) }
+        }
+    }
+
+    /// Ends a scan the camera has gone quiet on, which nothing else would end.
+    private func startWatchdog() {
+        watchdogTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkWatchdog() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        watchdogTimer = timer
+    }
+
+    private func checkWatchdog() {
+        guard let attempt, let verdict = watchdog?.verdict(at: ProcessInfo.processInfo.systemUptime), verdict != .healthy else { return }
+        scanLog.error("scan ended by watchdog: \(String(describing: verdict), privacy: .public)")
+        let sawOwner = attempt.sawOwner
+        endScan()
+        switch verdict {
+        case .healthy:
+            break
+        case .cameraSilent, .cameraStalled:
+            // Another app may be holding the camera, or it was unplugged. One more try, then say so.
+            if retry.shouldRetryAutomatically(after: .noFace) {
+                badge.hide()
+                followUp?.cancel()
+                followUp = Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    guard !Task.isCancelled, canScan else { return }
+                    beginScan()
+                }
+            } else {
+                badge.show(.message("Camera isn't responding", "Another app may be using it. Enter your password."))
+            }
+        case .overdue:
+            badge.hide()
+            afterMiss(sawOwner ? .unproven : .noFace)
         }
     }
 
@@ -193,8 +264,9 @@ final class UnlockController {
         }
     }
 
-    private func receive(_ capture: FaceCapture?, at time: TimeInterval, scan: UUID) {
+    private func receive(_ capture: FaceCapture?, brightness: Double?, at time: TimeInterval, scan: UUID) {
         guard scan == scanID, var current = attempt else { return }
+        watchdog?.noteFrame(at: ProcessInfo.processInfo.systemUptime)
         // A frame that queued behind a slow one may show a moment that has passed.
         guard current.isFresh(capturedAt: time, now: ProcessInfo.processInfo.systemUptime) else {
             scanLog.notice("frame stale")
@@ -218,7 +290,8 @@ final class UnlockController {
             scanLog.notice("frame score=\(best, format: .fixed(precision: 3), privacy: .public) yaw=\(reading.yaw, format: .fixed(precision: 2), privacy: .public) pitch=\(reading.pitch ?? 0, format: .fixed(precision: 2), privacy: .public) eyes=\(reading.leftEyeOpenness ?? -1, format: .fixed(precision: 2), privacy: .public)/\(reading.rightEyeOpenness ?? -1, format: .fixed(precision: 2), privacy: .public) framed=\(reading.isFramedByRectangle, privacy: .public) width=\(capture.widthFraction, format: .fixed(precision: 2), privacy: .public)")
         } else {
             outcome = current.observeNoFace(at: time)
-            scanLog.notice("frame no face")
+            if let brightness { darkness.observe(brightness: brightness) }
+            scanLog.notice("frame no face brightness=\(brightness ?? -1, format: .fixed(precision: 2), privacy: .public)")
         }
         if outcome != .keepWatching { scanLog.notice("scan outcome \(String(describing: outcome).prefix(8), privacy: .public)") }
         attempt = current
@@ -240,6 +313,10 @@ final class UnlockController {
                 // Recognized but never blinked: keep the prompt up and look again.
                 badge.show(.blink(headMovementCounts: !vault.contents.settings.requiresBlink))
                 afterMiss(.unproven)
+            } else if darkness.isTooDark {
+                // Trying again in the dark would only fail the same way, so say why instead.
+                scanLog.notice("too dark to see a face")
+                badge.show(.message("It's too dark to see you", "Turn on a light, or enter your password."))
             } else {
                 badge.hide()
                 afterMiss(.noFace)
@@ -251,6 +328,9 @@ final class UnlockController {
         if attempt != nil { retry.noteAttemptEnded(at: ProcessInfo.processInfo.systemUptime) }
         scanID = UUID()
         attempt = nil
+        watchdog = nil
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
         camera.stop()
     }
 
@@ -265,6 +345,14 @@ final class UnlockController {
             badge.show(.failure)
             afterMiss(kind == .spoof ? .spoof : .stranger)
         }
+    }
+
+    /// After any unlock, says so once if someone else tried while the owner was away.
+    private func alertAboutFailedAttempts() {
+        let failures = vault.contents.activity.failuresWhileAway
+        guard vault.contents.settings.alertsOnFailedAttempts, failures > 0, failures != alertedFailures else { return }
+        alertedFailures = failures
+        Alerts.failedAttempts(failures)
     }
 
     private func log(_ kind: ActivityEntry.Kind, note: String?) {
@@ -319,7 +407,14 @@ final class UnlockController {
             }
             if let blocker { badge.show(blocker) } else { badge.show(.failure) }
         } else {
-            vault.update { $0.passwordHealth.recordUnlock(at: Date()) }
+            vault.update { contents in
+                contents.passwordHealth.recordUnlock(at: Date())
+                if let index = contents.profiles.firstIndex(where: { $0.isActive && $0.name == name }) {
+                    contents.profiles[index].noteUnlock(at: Date())
+                }
+            }
+            if vault.contents.settings.playsUnlockSound { NSSound(named: "Glass")?.play() }
+            alertAboutFailedAttempts()
             log(.unlocked, note: name)
             badge.hide(after: .seconds(1.2))
         }

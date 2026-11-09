@@ -15,10 +15,17 @@ Face unlock for your Mac. Sesame recognizes you when your Mac wakes and signs yo
 2. Open Sesame. Because it isn't notarized by Apple, macOS stops it the first time. Open **System Settings → Privacy &
    Security**, scroll down, and click **Open Anyway** next to the message about Sesame. You only do this once.
 3. Follow the checklist on Overview: allow the camera and Accessibility, scan your face, and save your Mac password.
+4. Turn on **Open at login** when Overview offers it. Face unlock only works while Sesame is running, and it asks for
+   Touch ID once each time it starts.
 
 Sesame lives in the menu bar. When your Mac wakes, look at the camera and blink if the notch asks you to. If a scan
 doesn't work out, Sesame tries again on its own, and moving the pointer or trackpad anywhere starts another scan. You
 can always type your password as usual.
+
+From the menu bar you can see whether face unlock is on, pause it (for an hour, until tomorrow, or until you turn it
+back on), and lock Sesame:
+
+<p align="center"><img src="docs/menu.png" width="310" alt="Sesame's menu bar panel"></p>
 
 ## Updates
 
@@ -41,13 +48,18 @@ from this repository can replace it.
 | | |
 |---|---|
 | ![First run](docs/setup.png) | ![Faces](docs/faces.png) |
-| **Setup.** A checklist for permissions, your face, and your password. | **Faces.** Add a face for glasses or a hat, and switch faces on and off. |
+| **Setup.** A checklist for permissions, your face, and your password. | **Faces.** Add a face for glasses or a hat, rename it, see how often it's used, and switch it on or off. |
 | ![Password](docs/password.png) | ![Security](docs/security.png) |
-| **Password.** Saved encrypted, checked with macOS, typed only at the lock screen. | **Security.** Head-turn challenge, attention, blink only, Touch ID interval, match strictness. |
+| **Password.** Saved encrypted, checked with macOS, typed only at the lock screen. | **Security.** Head-turn challenge, attention, blink only, Touch ID interval, match strictness, alerts. |
 | ![Conditions](docs/conditions.png) | ![Activity](docs/activity.png) |
-| **Conditions.** Only unlock on trusted Wi-Fi, near your watch, or during set hours. | **Activity.** Every unlock and failed attempt. No images are kept. |
+| **Conditions.** Only unlock on trusted Wi-Fi, near your watch, or during set hours. | **Activity.** Every unlock and failed attempt, filterable. No images are kept. |
 | ![Help](docs/help.png) | ![About](docs/about.png) |
-| **Help.** Searchable answers to common problems. | **About.** Version, what's new, and updates. |
+| **Help.** Searchable answers to common problems. | **About.** Version, what's new, open at login, and updates. |
+
+Not sure it recognizes you? **Test** on the Faces page runs the same checks as the lock screen and shows how well you
+match and what Sesame is waiting for, without typing anything or locking your Mac:
+
+<p align="center"><img src="docs/test.png" width="560" alt="Testing face unlock"></p>
 
 Adding a face happens in the notch, right under the camera you're looking at:
 
@@ -81,6 +93,20 @@ password.
 - Optional conditions limit unlocking to trusted Wi-Fi, a connected Bluetooth device, or set hours.
 - Faces, password, history, and settings are stored in one AES-GCM encrypted file.
 - Only real cameras are used. Virtual cameras are ignored.
+- After you unlock, Sesame can notify you if someone else tried while you were away.
+
+## Built not to get stuck
+
+- When the room is too dark to find a face, Sesame says so instead of retrying blindly.
+- A scan that the camera goes quiet on is ended from outside: Sesame tries once more, then tells you the camera isn't
+  responding, so one bad scan never blocks the next.
+- Scanning stops when the display sleeps or the lid closes, and the camera is set up again after an error or when it's
+  unplugged.
+- If macOS blocks Sesame's typing, or your saved password stops working, Sesame works out which, says so, and stops
+  scanning instead of repeating a failed login.
+- The saved data is written in one step and keeps a last good copy. If the file is damaged Sesame falls back to that
+  copy, and it tells you when a save fails.
+- The Touch ID interval is measured on two clocks, so changing the Mac's date doesn't stretch it.
 
 ## Requirements
 
@@ -101,7 +127,8 @@ SESAME_SNAPSHOT_DIR=~/Desktop/sesame-shots path/to/Debug/Sesame.app/Contents/Mac
 ```
 
 Add `SESAME_SNAPSHOT_SCENARIO=new`, `locked`, `keymissing`, `restart`, `update`, or `updated` for other states, and
-`SESAME_SNAPSHOT_PAGES=notch,badges` for the notch face scan and the lock-screen badges. That's how every screenshot
+`SESAME_SNAPSHOT_PAGES=notch,badges,menu,test` for the notch face scan, the lock-screen badges, the menu bar panel, and
+the test screen. That's how every screenshot
 here is made.
 
 ## Tests

@@ -191,14 +191,21 @@ private final class UpdateBridge: NSObject, SPUStandardUserDriverDelegate, UNUse
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        DispatchQueue.main.async { [weak self] in self?.onOpen?() }
+        let isUpdate = response.notification.request.identifier == UpdateNotification.id
+        DispatchQueue.main.async { [weak self] in
+            if isUpdate {
+                self?.onOpen?()
+            } else {
+                NotificationCenter.default.post(name: Alerts.opened, object: nil)
+            }
+        }
         completionHandler()
     }
 }
 
 /// The "new version" notification. Posting again replaces the previous one instead of stacking up.
 private enum UpdateNotification {
-    private static let id = "sesame.update"
+    static let id = "sesame.update"
 
     /// Asks once, at launch, while the person is likely looking, so a later update notice isn't stuck behind a prompt.
     static func askPermissionIfNeeded() {

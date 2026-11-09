@@ -3,6 +3,7 @@ import Foundation
 import LocalAuthentication
 import Observation
 import OpenDirectory
+import OSLog
 import SesameCore
 
 struct SecuritySettings: Codable, Equatable {
@@ -14,6 +15,13 @@ struct SecuritySettings: Codable, Equatable {
     var unlockRules = UnlockRules()
     /// Only a blink proves you're there; a natural head movement doesn't count.
     var requiresBlink = false
+    /// Switched off by its owner, for a while or until it's switched back on.
+    var pause: Pause?
+    /// Notify after unlocking when someone else tried while you were away.
+    var alertsOnFailedAttempts = true
+    var playsUnlockSound = false
+
+    func isPaused(at now: Date = Date()) -> Bool { pause?.isActive(at: now) ?? false }
 
     init() {}
 
@@ -28,6 +36,9 @@ struct SecuritySettings: Codable, Equatable {
         matchRule = try saved.decodeIfPresent(MatchRule.self, forKey: .matchRule) ?? defaults.matchRule
         unlockRules = try saved.decodeIfPresent(UnlockRules.self, forKey: .unlockRules) ?? defaults.unlockRules
         requiresBlink = try saved.decodeIfPresent(Bool.self, forKey: .requiresBlink) ?? defaults.requiresBlink
+        pause = try saved.decodeIfPresent(Pause.self, forKey: .pause)
+        alertsOnFailedAttempts = try saved.decodeIfPresent(Bool.self, forKey: .alertsOnFailedAttempts) ?? defaults.alertsOnFailedAttempts
+        playsUnlockSound = try saved.decodeIfPresent(Bool.self, forKey: .playsUnlockSound) ?? defaults.playsUnlockSound
     }
 }
 
@@ -154,20 +165,46 @@ final class Vault {
     private(set) var trust: TrustWindow?
     private(set) var hasRecentApproval = false
 
+    /// Set when the last save didn't reach the disk, so the app can say so instead of losing changes quietly.
+    private(set) var saveError: String?
+    /// True when the main file was damaged and the last good copy was used instead.
+    private(set) var restoredFromBackup = false
+
     @ObservationIgnored private var key: SymmetricKey?
     @ObservationIgnored private var approvalExpiry: Task<Void, Never>?
+    /// When Touch ID was approved, on a clock that keeps counting through sleep and can't be set.
+    @ObservationIgnored private var trustedSince: ContinuousClock.Instant?
+    @ObservationIgnored private let log = Logger(subsystem: "com.sagarrokade.sesame", category: "vault")
 
     private static let fileURL: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let folder = support.appendingPathComponent("Sesame", isDirectory: true)
+        // A copy with another bundle ID, such as the update test's, keeps its own data and never touches the real one.
+        let id = Bundle.main.bundleIdentifier ?? "com.sagarrokade.sesame"
+        let name = id == "com.sagarrokade.sesame" ? "Sesame" : "Sesame (\(id))"
+        let folder = support.appendingPathComponent(name, isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder.appendingPathComponent("vault.sesame")
     }()
 
-    private var fileExists: Bool { FileManager.default.fileExists(atPath: Self.fileURL.path) }
+    /// The last copy that was read back successfully, kept in case the main file is damaged.
+    private static var backupURL: URL { fileURL.appendingPathExtension("bak") }
+
+    private var fileExists: Bool {
+        FileManager.default.fileExists(atPath: Self.fileURL.path) || FileManager.default.fileExists(atPath: Self.backupURL.path)
+    }
+
+    private static func read(_ url: URL, with key: SymmetricKey) -> VaultContents? {
+        guard let sealed = try? Data(contentsOf: url),
+              let box = try? AES.GCM.SealedBox(combined: sealed),
+              let plain = try? AES.GCM.open(box, using: key)
+        else { return nil }
+        return try? JSONDecoder().decode(VaultContents.self, from: plain)
+    }
 
     /// Whether Sesame has been set up on this Mac before, without opening anything.
-    static var hasSavedData: Bool { FileManager.default.fileExists(atPath: fileURL.path) }
+    static var hasSavedData: Bool {
+        FileManager.default.fileExists(atPath: fileURL.path) || FileManager.default.fileExists(atPath: backupURL.path)
+    }
 
     func open() async throws {
         let mayCreate = !fileExists
@@ -186,19 +223,31 @@ final class Vault {
         }
 
         var loaded = VaultContents()
+        var usedBackup = false
         if fileExists {
-            guard let sealed = try? Data(contentsOf: Self.fileURL),
-                  let box = try? AES.GCM.SealedBox(combined: sealed),
-                  let plain = try? AES.GCM.open(box, using: opened),
-                  let decoded = try? JSONDecoder().decode(VaultContents.self, from: plain)
-            else { throw VaultError.unreadable }
-            loaded = decoded
+            if let main = Self.read(Self.fileURL, with: opened) {
+                loaded = main
+            } else if let backup = Self.read(Self.backupURL, with: opened) {
+                // The main file is missing or damaged, such as from a crash or full disk mid-save.
+                log.error("vault file unreadable, restored the last good copy")
+                loaded = backup
+                usedBackup = true
+            } else {
+                throw VaultError.unreadable
+            }
         }
         key = opened
         contents = loaded
         isOpen = true
+        restoredFromBackup = usedBackup
         trust = TrustWindow(grantedAt: Date(), hours: loaded.settings.trustHours)
+        trustedSince = .now
         persist()
+        // What was just read is known to be good, so it becomes the copy to fall back on.
+        if saveError == nil {
+            try? FileManager.default.removeItem(at: Self.backupURL)
+            try? FileManager.default.copyItem(at: Self.fileURL, to: Self.backupURL)
+        }
     }
 
     #if DEBUG
@@ -208,6 +257,7 @@ final class Vault {
         isOpen = true
         hasRecentApproval = true
         trust = TrustWindow(grantedAt: Date(), hours: sample.settings.trustHours)
+        trustedSince = .now
     }
     #endif
 
@@ -216,9 +266,15 @@ final class Vault {
         contents = VaultContents()
         isOpen = false
         trust = nil
+        trustedSince = nil
     }
 
-    var isTrusted: Bool { isOpen && trust?.isValid(at: Date()) == true }
+    /// Both the wall clock and a clock that can't be set have to agree the approval is still good.
+    var isTrusted: Bool {
+        guard isOpen, let trust, let trustedSince, trust.isValid(at: Date()) else { return false }
+        let elapsed = ContinuousClock.now - trustedSince
+        return trust.isValid(elapsed: Double(elapsed.components.seconds))
+    }
 
     func closeIfExpired() {
         if isOpen, !isTrusted { close() }
@@ -227,6 +283,8 @@ final class Vault {
     func update(_ change: (inout VaultContents) -> Void) {
         guard isOpen else { return }
         change(&contents)
+        // A changed Touch ID interval applies to the approval already running, not just the next one.
+        if trust != nil, trust?.hours != contents.settings.trustHours { trust?.hours = contents.settings.trustHours }
         persist()
     }
 
@@ -281,16 +339,25 @@ final class Vault {
     func eraseEverything() {
         close()
         try? FileManager.default.removeItem(at: Self.fileURL)
+        try? FileManager.default.removeItem(at: Self.backupURL)
+        saveError = nil
+        restoredFromBackup = false
         VaultKeychain.delete()
     }
 
     private func persist() {
-        guard let key,
-              let plain = try? JSONEncoder().encode(contents),
-              let sealed = try? AES.GCM.seal(plain, using: key).combined
-        else { return }
-        try? sealed.write(to: Self.fileURL, options: [.atomic])
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.fileURL.path)
+        guard let key else { return }
+        do {
+            guard let sealed = try AES.GCM.seal(JSONEncoder().encode(contents), using: key).combined else {
+                throw VaultError.unreadable
+            }
+            try sealed.write(to: Self.fileURL, options: [.atomic])
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.fileURL.path)
+            if saveError != nil { saveError = nil }
+        } catch {
+            log.error("vault save failed: \(error.localizedDescription, privacy: .public)")
+            saveError = error.localizedDescription
+        }
     }
 }
 

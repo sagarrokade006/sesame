@@ -6,6 +6,8 @@ enum UnlockStatus: Equatable {
     case locked
     case setupNeeded(remaining: Int)
     case paused(String)
+    /// Switched off by the person, from the menu bar or Overview.
+    case pausedByUser(until: Date?)
     case off(String)
     case ready
 
@@ -14,6 +16,7 @@ enum UnlockStatus: Equatable {
         case .locked: return "Sesame is locked"
         case .setupNeeded: return "Finish setting up"
         case .paused: return "Face unlock is paused"
+        case .pausedByUser: return "You paused face unlock"
         case .off: return "Face unlock is off here"
         case .ready: return "Face unlock is on"
         }
@@ -24,6 +27,10 @@ enum UnlockStatus: Equatable {
         case .locked: return "Use Touch ID to open Sesame."
         case .setupNeeded(let remaining): return remaining == 1 ? "One step left before Sesame can unlock your Mac." : "\(remaining) steps left before Sesame can unlock your Mac."
         case .paused(let reason), .off(let reason): return reason
+        case .pausedByUser(let until):
+            guard let until else { return "Your Mac unlocks with your password or Touch ID until you turn it back on." }
+            let day = Calendar.current.isDateInToday(until) ? "" : " tomorrow"
+            return "Back on at \(until.formatted(date: .omitted, time: .shortened))\(day). Until then, use your password or Touch ID."
         case .ready: return "Sesame scans for you when your Mac wakes."
         }
     }
@@ -32,7 +39,7 @@ enum UnlockStatus: Equatable {
         switch self {
         case .locked: return "Locked"
         case .setupNeeded: return "Setup needed"
-        case .paused: return "Paused"
+        case .paused, .pausedByUser: return "Paused"
         case .off: return "Off here"
         case .ready: return "On"
         }
@@ -42,7 +49,7 @@ enum UnlockStatus: Equatable {
         switch self {
         case .ready: return Theme.mint
         case .locked: return Theme.tertiary
-        case .setupNeeded, .off: return Theme.amber
+        case .setupNeeded, .off, .pausedByUser: return Theme.amber
         case .paused: return Theme.coral
         }
     }
@@ -90,6 +97,7 @@ extension AppModel {
         if remaining > 0 { return .setupNeeded(remaining: remaining) }
         if !controller.isModelAvailable { return .paused("The face recognition model is missing from this build.") }
         if vault.contents.passwordHealth.isOutdated { return .paused("Your saved password looks out of date.") }
+        if vault.contents.settings.isPaused() { return .pausedByUser(until: vault.contents.settings.pause?.until) }
         let rules = vault.contents.settings.unlockRules
         if !rules.isEmpty, let unmet = Surroundings.shared.firstUnmet(rules) { return .off(unmet.explanation) }
         return .ready

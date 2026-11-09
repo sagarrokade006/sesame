@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Observation
 import OSLog
+import SesameCore
 import SwiftUI
 
 @main
@@ -48,11 +49,21 @@ final class AppModel {
     let updates = UpdateService()
     let whatsNew = WhatsNew()
     private(set) var errorMessage: String?
+    @ObservationIgnored private var isOpeningVault = false
     let permissions = Permissions.shared
+    let loginItem = LoginItem()
 
     init() {
         controller = UnlockController(vault: vault)
         permissions.startWatching()
+        #if DEBUG
+        if Snapshot.folder != nil { return }
+        #endif
+        if !Permissions.wasRestarted, Vault.hasSavedData {
+            // Touch ID is needed after every restart, so ask as soon as Sesame starts, such as at login, instead of
+            // leaving face unlock off until someone remembers to open the window.
+            Task { @MainActor in await self.openVault(showWindow: false) }
+        }
         if Permissions.wasRestarted {
             // Came back from "Restart Sesame": pick up where the person left off.
             Task { @MainActor in
@@ -87,10 +98,17 @@ final class AppModel {
     /// Xcode and a release, which keep their keys in different places. Only starting over gets past this.
     private(set) var canStartOver = false
 
-    func openVault() async {
+    func pause(_ pause: Pause?) {
+        vault.update { $0.settings.pause = pause }
+    }
+
+    func openVault(showWindow: Bool = true) async {
+        guard !vault.isOpen, !isOpeningVault else { return }
+        isOpeningVault = true
+        defer { isOpeningVault = false }
         do {
             try await vault.open()
-            Self.bringToFront()
+            if showWindow { Self.bringToFront() }
             errorMessage = nil
             canStartOver = false
             if vault.hasPassword, !vault.contents.passwordHealth.isOutdated {
@@ -133,36 +151,130 @@ private struct MenuPanel: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
 
+    private var status: UnlockStatus { model.unlockStatus }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Hexagon()
-                    .stroke(Theme.mint, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-                    .frame(width: 16, height: 16)
-                Text("Sesame").font(.system(size: 15, weight: .bold, design: .rounded))
-                Spacer()
-                Text(model.vault.isTrusted ? "On" : "Locked")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Hexagon().fill(status.color.opacity(0.18))
+                    Hexagon().stroke(status.color, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                    Image(systemName: symbol).font(.system(size: 13, weight: .bold)).foregroundStyle(status.color)
+                }
+                .frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.title).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.primary)
+                    Text(status.detail)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(14)
+
+            if model.vault.isOpen {
+                divider
+                row(symbol: "pause.fill", title: model.vault.contents.settings.isPaused() ? "Face unlock is paused" : "Pause face unlock") {
+                    if model.vault.contents.settings.isPaused() {
+                        Button("Turn back on") { model.pause(nil) }
+                    } else {
+                        PauseMenu(model: model)
+                    }
+                }
+                if let last = model.vault.contents.passwordHealth.lastUnlock {
+                    divider
+                    row(symbol: "lock.open.fill", title: "Last face unlock") {
+                        Text(last.formatted(.relative(presentation: .named)))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.secondary)
+                    }
+                }
+            }
+
             if let version = model.updates.availableVersion {
-                Button("Update to \(version)") { model.updates.checkNow() }
-                    .buttonStyle(FilledButtonStyle(color: Theme.mint))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                divider
+                row(symbol: "arrow.down.circle.fill", title: "Sesame \(version) is available") {
+                    Button("Update") { model.updates.checkNow() }
+                        .buttonStyle(FilledButtonStyle(color: Theme.sky))
+                }
             }
-            HStack {
-                Button("Open Sesame") {
-                    openWindow(id: "main")
-                    NSApp.activate()
+
+            divider
+            HStack(spacing: 8) {
+                if model.vault.isOpen {
+                    Button("Open Sesame", action: showWindow).buttonStyle(FilledButtonStyle(color: Theme.mint))
+                    Button("Lock") { model.vault.close() }
+                } else {
+                    Button("Unlock") {
+                        showWindow()
+                        Task { await model.openVault() }
+                    }
+                    .buttonStyle(FilledButtonStyle(color: Theme.mint))
+                    Button("Open Sesame", action: showWindow)
                 }
                 Spacer()
-                if model.vault.isOpen {
-                    Button("Lock") { model.vault.close() }
-                }
                 Button("Quit") { NSApp.terminate(nil) }
             }
+            .padding(14)
         }
-        .padding(14)
-        .frame(width: 280)
+        .frame(width: 310)
+        .background(Theme.page)
+        .preferredColorScheme(.dark)
+    }
+
+    private var symbol: String {
+        switch status {
+        case .ready: return "checkmark"
+        case .locked: return "lock.fill"
+        case .setupNeeded: return "list.bullet"
+        case .pausedByUser: return "pause.fill"
+        case .paused, .off: return "exclamationmark"
+        }
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Theme.line).frame(height: 1)
+    }
+
+    private func row(symbol: String, title: String, @ViewBuilder trailing: () -> some View) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 18)
+            Text(title).font(.system(size: 12.5)).foregroundStyle(Theme.primary)
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 40)
+    }
+
+    private func showWindow() {
+        openWindow(id: "main")
+        AppModel.bringToFront()
     }
 }
+
+/// The three ways to pause: for an hour, until tomorrow, or until it's turned back on.
+struct PauseMenu: View {
+    let model: AppModel
+
+    var body: some View {
+        Menu("Pause") {
+            Button("For 1 hour") { model.pause(.forHours(1, from: Date())) }
+            Button("Until tomorrow") { model.pause(.untilTomorrow(from: Date(), calendar: .current)) }
+            Button("Until I turn it back on") { model.pause(Pause()) }
+        }
+        .menuStyle(.borderedButton)
+        .fixedSize()
+    }
+}
+
+#if DEBUG
+extension AppModel {
+    /// For snapshots: the menu bar panel as it looks when opened.
+    func menuPanelSnapshot() -> some View { MenuPanel(model: self) }
+}
+#endif

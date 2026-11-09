@@ -6,6 +6,7 @@ import SwiftUI
 struct FacesPage: View {
     let model: AppModel
     @State private var enrollment: Enrollment?
+    @State private var test: RecognitionTest?
 
     private var vault: Vault { model.vault }
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
@@ -20,14 +21,26 @@ struct FacesPage: View {
                 NotchScanner.shared.hide()
                 self.enrollment = nil
             }
+        } else if let test {
+            RecognitionTestPanel(test: test) {
+                test.stop()
+                self.test = nil
+            }
         } else if vault.contents.profiles.isEmpty {
             emptyState
         } else {
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(vault.contents.profiles) { profile in
-                    FaceCard(profile: profile, setActive: { setActive(profile, $0) }, remove: { remove(profile) })
+                    FaceCard(profile: profile, setActive: { setActive(profile, $0) }, rename: { rename(profile, to: $0) }, remove: { remove(profile) })
                 }
                 addCard
+            }
+            Card {
+                SettingRow(icon: "checkmark.seal.fill", tint: Theme.sky, title: "Test face unlock",
+                           detail: "See how well you match and what Sesame is waiting for, without locking your Mac.") {
+                    Button("Test") { startTest() }
+                        .disabled(!vault.contents.profiles.contains(where: \.isActive))
+                }
             }
             Text("Add another face if you often wear glasses or a hat. Switch a face off to keep it without using it.")
                 .font(.system(size: 11.5))
@@ -85,8 +98,37 @@ struct FacesPage: View {
         }
     }
 
+    private func rename(_ profile: FaceProfile, to name: String) {
+        vault.update { contents in
+            contents.profiles.indices
+                .filter { contents.profiles[$0].id == profile.id }
+                .forEach { contents.profiles[$0].name = name }
+        }
+    }
+
     private func remove(_ profile: FaceProfile) {
         vault.update { $0.profiles.removeAll { $0.id == profile.id } }
+    }
+
+    private func startTest() {
+        Task {
+            guard await AVCaptureDevice.requestAccess(for: .video) else { return }
+            let session = RecognitionTest(contents: vault.contents)
+            session.start()
+            test = session
+        }
+    }
+
+    /// `showingTest` is for snapshots: it opens with the test panel partway through.
+    init(model: AppModel, showingTest: Bool = false) {
+        self.model = model
+        #if DEBUG
+        if showingTest {
+            let session = RecognitionTest(contents: model.vault.contents)
+            session.pretendWaitingForProof()
+            _test = State(initialValue: session)
+        }
+        #endif
     }
 
     private func startEnrollment() {
@@ -107,8 +149,16 @@ struct FacesPage: View {
 private struct FaceCard: View {
     let profile: FaceProfile
     let setActive: (Bool) -> Void
+    let rename: (String) -> Void
     let remove: () -> Void
     @State private var confirmingRemove = false
+    @State private var isRenaming = false
+    @State private var newName = ""
+
+    private var usage: String {
+        guard let count = profile.unlockCount, count > 0, let last = profile.lastUsedAt else { return "Not used yet" }
+        return "\(count) \(count == 1 ? "unlock" : "unlocks") · Last \(last.formatted(.relative(presentation: .named)))"
+    }
 
     private var initials: String {
         let letters = profile.name.split(separator: " ").prefix(2).compactMap(\.first)
@@ -128,6 +178,11 @@ private struct FaceCard: View {
                 .frame(width: 44, height: 44)
                 Spacer()
                 Menu {
+                    Button("Rename…") {
+                        newName = profile.name
+                        isRenaming = true
+                    }
+                    Divider()
                     Button("Remove \(profile.name)…", role: .destructive) { confirmingRemove = true }
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
@@ -142,6 +197,7 @@ private struct FaceCard: View {
                 Text("\(profile.vectors.count) samples · Added \(profile.createdAt.formatted(.dateTime.month(.abbreviated).day()))")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Theme.secondary)
+                Text(usage).font(.system(size: 11.5)).foregroundStyle(Theme.tertiary)
             }
             HStack {
                 Text(profile.isActive ? "Used for unlock" : "Switched off")
@@ -159,6 +215,14 @@ private struct FaceCard: View {
             Button("Remove", role: .destructive, action: remove)
         } message: {
             Text("Sesame will stop recognizing this face. You can scan it again later.")
+        }
+        .alert("Rename face", isPresented: $isRenaming) {
+            TextField("Name", text: $newName)
+            Button("Save") {
+                let trimmed = newName.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty { rename(trimmed) }
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 }

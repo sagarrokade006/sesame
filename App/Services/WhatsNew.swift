@@ -19,6 +19,13 @@ final class WhatsNew {
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
             .map(Changelog.init(markdown:))?
             .release(version)
+        #if DEBUG
+        if Snapshot.folder != nil {
+            // Snapshots share the real app's preferences, and must neither read nor change what's been seen.
+            isUnseen = false
+            return
+        }
+        #endif
         let seen = defaults.string(forKey: Self.seenKey)
         if seen == nil, !Vault.hasSavedData {
             // A fresh install has nothing to compare against, so there's no "new" to announce.
@@ -32,6 +39,9 @@ final class WhatsNew {
     func markSeen() {
         guard isUnseen else { return }
         isUnseen = false
+        #if DEBUG
+        if Snapshot.folder != nil { return }
+        #endif
         UserDefaults.standard.set(version, forKey: Self.seenKey)
     }
 

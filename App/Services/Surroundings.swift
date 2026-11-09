@@ -70,10 +70,18 @@ final class Surroundings: NSObject, CLLocationManagerDelegate {
         return IOBluetoothDevice(addressString: device.address)?.isConnected() ?? false
     }
 
+    private var now: Date {
+        #if DEBUG
+        // Snapshots always show midday, so an hours rule doesn't change the picture by time of day.
+        if sample != nil { return Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date() }
+        #endif
+        return Date()
+    }
+
     /// Only looks up what the rules actually use.
     func firstUnmet(_ rules: UnlockRules) -> UnlockRules.Unmet? {
         rules.firstUnmet(
-            at: Date(),
+            at: now,
             calendar: .current,
             network: rules.trustedNetworks.isEmpty ? nil : network,
             deviceConnected: rules.device.map(isConnected) ?? false

@@ -17,12 +17,17 @@ struct HelpPage: View {
         Topic(question: "When does Sesame scan?", answer: "When your Mac wakes: opening the lid, waking the display, or a screen saver ending."),
         Topic(question: "I locked my Mac and the screen stayed on", answer: "Sesame doesn't scan right away, so it can't unlock behind you as you walk off. Move the pointer or trackpad when you're ready. To scan immediately instead, turn on \"Scan as soon as the Mac locks\" in Security."),
         Topic(question: "The first scan failed. What now?", answer: "Sesame tries again by itself: up to three times when it sees you but you haven't blinked, once when it didn't see anyone. After that, move the pointer or trackpad to scan again. You can always type your password as usual."),
+        Topic(question: "How do I turn face unlock off for a while?", answer: "Choose Pause in Sesame's menu bar panel or on Overview: for 1 hour, until tomorrow, or until you turn it back on. Meanwhile your Mac unlocks with your password or Touch ID."),
+        Topic(question: "How can I check that it recognizes me?", answer: "On Faces, choose Test. Sesame runs the same checks as the lock screen and shows how well you match and whether it saw you blink, without typing anything or locking your Mac."),
         Topic(question: "Why does it ask me to blink or move?", answer: "Sesame needs proof you're a real person and not a photo, so it watches for a natural blink or a small head movement, seen while your face is clearly visible. To accept only a blink, turn on Require a blink in Security."),
     ]
 
     private let trouble = [
         Topic(question: "\"Sesame paused: too many attempts\"", answer: "After 5 failed attempts, face unlock stops until you unlock with your password or Touch ID."),
         Topic(question: "\"Your saved password looks out of date\"", answer: "You probably changed your Mac password. Save the new one on the Password page."),
+        Topic(question: "It stopped working after I restarted my Mac", answer: "Sesame has to be running, and needs Touch ID once after every restart. Turn on Open at login in About, and approve the Touch ID prompt Sesame shows when it starts."),
+        Topic(question: "\"It's too dark to see you\"", answer: "The camera couldn't make out a face because the room is dark. Turn on a light or face a window, or enter your password."),
+        Topic(question: "\"Camera isn't responding\"", answer: "Another app may be using the camera, or it was unplugged. Sesame tries once more, then stops so it never gets stuck. Close the other app, or enter your password."),
         Topic(question: "It stopped working after a day or two", answer: "For safety, Sesame asks for Touch ID or your password every 48 hours and after every restart. Open Sesame and choose Unlock. You can change this in Security."),
         Topic(question: "Accessibility is on, but Sesame doesn't see it", answer: "macOS can keep an old permission after an app is updated. In System Settings, open Privacy & Security, then Accessibility. Select Sesame, remove it with the minus button, then choose Allow in Sesame again."),
         Topic(question: "Pressing a key doesn't start a scan", answer: "At the lock screen macOS hides every key press from apps, to protect your password, so Sesame can't see them. Move the pointer or trackpad instead."),

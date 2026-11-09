@@ -72,6 +72,29 @@ final class FaceReader: @unchecked Sendable {
         )
     }
 
+    /// Average brightness of a BGRA frame, 0 to 1, from a sparse grid of pixels. Cheap enough to run on every frame.
+    static func brightness(of pixels: CVPixelBuffer) -> Double? {
+        guard CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA else { return nil }
+        CVPixelBufferLockBaseAddress(pixels, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(pixels) else { return nil }
+        let width = CVPixelBufferGetWidth(pixels)
+        let height = CVPixelBufferGetHeight(pixels)
+        let rowBytes = CVPixelBufferGetBytesPerRow(pixels)
+        let step = 24
+        var total = 0.0
+        var count = 0
+        for y in stride(from: step / 2, to: height, by: step) {
+            let row = base.advanced(by: y * rowBytes).assumingMemoryBound(to: UInt8.self)
+            for x in stride(from: step / 2, to: width, by: step) {
+                let pixel = row.advanced(by: x * 4)
+                total += 0.114 * Double(pixel[0]) + 0.587 * Double(pixel[1]) + 0.299 * Double(pixel[2])
+                count += 1
+            }
+        }
+        return count > 0 ? total / Double(count) / 255 : nil
+    }
+
     private static func area(_ rect: CGRect) -> CGFloat { rect.width * rect.height }
 
     /// A phone or printout shows up as a rectangle around the face, one that isn't just the whole picture.

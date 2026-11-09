@@ -22,6 +22,9 @@ public struct FaceProfile: Codable, Sendable, Identifiable, Equatable {
     public var isActive: Bool
     public var modelVersion: String
     public var createdAt: Date
+    /// Optional so profiles saved before these existed still load.
+    public var lastUsedAt: Date?
+    public var unlockCount: Int?
 
     public init(id: UUID = UUID(), name: String, vectors: [FaceVector], modelVersion: String, createdAt: Date, isActive: Bool = true) {
         self.id = id
@@ -30,6 +33,11 @@ public struct FaceProfile: Codable, Sendable, Identifiable, Equatable {
         self.modelVersion = modelVersion
         self.createdAt = createdAt
         self.isActive = isActive
+    }
+
+    public mutating func noteUnlock(at date: Date) {
+        lastUsedAt = date
+        unlockCount = (unlockCount ?? 0) + 1
     }
 
     /// Averages the closest few samples, so one lucky sample can't carry a match on its own.

@@ -15,6 +15,12 @@ public struct TrustWindow: Codable, Sendable, Equatable {
     public func isValid(at now: Date) -> Bool {
         now >= grantedAt && now.timeIntervalSince(grantedAt) < TimeInterval(hours) * 3600
     }
+
+    /// The same window measured on a clock that can't be set, such as time since boot including sleep. Both have to
+    /// agree, so turning the Mac's clock back doesn't stretch an approval.
+    public func isValid(elapsed: TimeInterval) -> Bool {
+        elapsed >= 0 && elapsed < TimeInterval(hours) * 3600
+    }
 }
 
 /// Stops an endless stream of attempts at one lock screen.
@@ -116,6 +122,33 @@ public struct ActivityHistory: Codable, Sendable, Equatable {
     }
 
     public mutating func clear() { entries = [] }
+
+    /// One day's totals, for the week chart.
+    public struct Day: Sendable, Equatable, Identifiable {
+        public let date: Date
+        public var unlocks = 0
+        public var failures = 0
+
+        public var id: Date { date }
+    }
+
+    /// The last `days` days, oldest first, ending today. Days with nothing still appear, with zeros.
+    public func daily(days: Int, endingAt now: Date, calendar: Calendar) -> [Day] {
+        let today = calendar.startOfDay(for: now)
+        var result = (0..<max(days, 0)).reversed().compactMap { offset in
+            calendar.date(byAdding: .day, value: -offset, to: today).map { Day(date: $0) }
+        }
+        for entry in entries {
+            let day = calendar.startOfDay(for: entry.date)
+            guard let index = result.firstIndex(where: { $0.date == day }) else { continue }
+            switch entry.kind {
+            case .unlocked: result[index].unlocks += 1
+            case .stranger, .spoof: result[index].failures += 1
+            case .paused, .passwordProblem: break
+            }
+        }
+        return result
+    }
 
     /// Failed attempts since the most recent unlock before now.
     public var failuresWhileAway: Int {

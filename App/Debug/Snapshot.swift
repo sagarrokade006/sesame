@@ -41,6 +41,21 @@ enum Snapshot {
             .split(separator: ",").compactMap { name in Page.allCases.first { $0.rawValue.lowercased() == name.lowercased() } }
             ?? Page.allCases
         let size = CGSize(width: MainView.size.width, height: Double(environment["SESAME_SNAPSHOT_HEIGHT"] ?? "") ?? MainView.size.height)
+        model.loginItem.pretend(on: scenario != "new")
+        if environment["SESAME_SNAPSHOT_PAGES"]?.contains("menu") == true {
+            write(model.menuPanelSnapshot().fixedSize(), size: CGSize(width: 310, height: 250), to: folder.appendingPathComponent("menu.png"))
+        }
+        if environment["SESAME_SNAPSHOT_PAGES"]?.contains("test") == true {
+            let view = VStack(alignment: .leading, spacing: 14) {
+                PageHeader(title: "Faces", subtitle: Page.faces.subtitle)
+                FacesPage(model: model, showingTest: true)
+            }
+            .padding(28)
+            .frame(width: 620, alignment: .leading)
+            .background(Theme.page)
+            .preferredColorScheme(.dark)
+            write(view, size: CGSize(width: 620, height: 400), to: folder.appendingPathComponent("test.png"))
+        }
         if environment["SESAME_SNAPSHOT_PAGES"]?.contains("badges") == true {
             let badges: [(String, LockBadge.Content)] = [
                 ("scanning", .scanning),
@@ -104,6 +119,8 @@ enum Snapshot {
             FaceProfile(name: "Alex Glasses", vectors: Array(repeating: vector, count: 26), modelVersion: FaceReader.modelVersion, createdAt: ago(24 * 3)),
             FaceProfile(name: "Guest", vectors: Array(repeating: vector, count: 24), modelVersion: FaceReader.modelVersion, createdAt: ago(24 * 2), isActive: false),
         ]
+        for _ in 0..<41 { contents.profiles[0].noteUnlock(at: ago(0.4)) }
+        for _ in 0..<12 { contents.profiles[1].noteUnlock(at: ago(3.5)) }
         contents.sealedPassword = Data([0])
         contents.passwordHealth.record(.accepted, at: ago(30))
         contents.passwordHealth.recordUnlock(at: ago(0.4))
@@ -117,8 +134,7 @@ enum Snapshot {
         }
         contents.settings.unlockRules.trustedNetworks = ["Home", "Studio 5G"]
         contents.settings.unlockRules.device = watch
-        // 7 AM to 2 AM, so the sample shows face unlock as on for most of the day.
-        contents.settings.unlockRules.hours = .init(start: 7 * 60, end: 2 * 60)
+        contents.settings.unlockRules.hours = .init(start: 7 * 60, end: 23 * 60)
         return contents
     }
 

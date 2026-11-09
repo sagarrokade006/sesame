@@ -24,11 +24,23 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
             ?? discovery.devices.first { $0.transportType == usbTransport }
     }
 
+    override init() {
+        super.init()
+        // A camera that errors out or is unplugged mid-session is set up from scratch next time.
+        for name in [AVCaptureSession.runtimeErrorNotification, AVCaptureSession.wasInterruptedNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: session, queue: nil) { [weak self, queue] _ in
+                queue.async { [weak self] in self?.needsFreshSetup = true }
+            }
+        }
+    }
+
+    private var needsFreshSetup = false
+
     func start(_ handler: Handler?) {
         queue.async { [self] in
             self.handler = handler
             configureIfNeeded()
-            if !session.isRunning { session.startRunning() }
+            if isConfigured, !session.isRunning { session.startRunning() }
         }
     }
 
@@ -39,19 +51,39 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
         }
     }
 
+    /// Sets the session up once, and again whenever its camera has gone away or failed.
     private func configureIfNeeded() {
+        let currentDevice = (session.inputs.first as? AVCaptureDeviceInput)?.device
+        if isConfigured, needsFreshSetup || currentDevice?.isConnected != true || currentDevice?.uniqueID != Self.trustedDevice()?.uniqueID {
+            if session.isRunning { session.stopRunning() }
+            session.beginConfiguration()
+            session.inputs.forEach(session.removeInput)
+            session.outputs.forEach(session.removeOutput)
+            session.commitConfiguration()
+            isConfigured = false
+        }
+        needsFreshSetup = false
         guard !isConfigured, let device = Self.trustedDevice(),
               let input = try? AVCaptureDeviceInput(device: device)
         else { return }
         session.beginConfiguration()
         session.sessionPreset = .hd1280x720
-        if session.canAddInput(input) { session.addInput(input) }
+        guard session.canAddInput(input) else {
+            session.commitConfiguration()
+            return
+        }
+        session.addInput(input)
 
         let output = AVCaptureVideoDataOutput()
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
-        if session.canAddOutput(output) { session.addOutput(output) }
+        guard session.canAddOutput(output) else {
+            session.removeInput(input)
+            session.commitConfiguration()
+            return
+        }
+        session.addOutput(output)
         session.commitConfiguration()
         isConfigured = true
     }

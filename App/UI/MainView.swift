@@ -48,7 +48,7 @@ enum Page: String, CaseIterable, Identifiable {
 }
 
 struct MainView: View {
-    static let size = CGSize(width: 820, height: 640)
+    static let size = CGSize(width: 820, height: 700)
 
     let model: AppModel
     @State private var page: Page
@@ -68,12 +68,19 @@ struct MainView: View {
                     }
                     content
                 }
+                .id(page)
+                .transition(.opacity.combined(with: .offset(y: 6)))
                 .padding(.horizontal, 28)
                 .padding(.top, 46)
                 .padding(.bottom, 28)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.never)
+            .animation(.easeOut(duration: 0.18), value: page)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Alerts.opened)) { _ in
+            page = .activity
+            AppModel.bringToFront()
         }
         .background(Theme.page)
         .ignoresSafeArea()
@@ -81,6 +88,7 @@ struct MainView: View {
             // Ends on its own when the window closes.
             while !Task.isCancelled {
                 model.permissions.refresh()
+                model.loginItem.refresh()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -91,7 +99,7 @@ struct MainView: View {
         if page == .help {
             HelpPage()
         } else if page == .about {
-            AboutPage(updates: model.updates, whatsNew: model.whatsNew)
+            AboutPage(updates: model.updates, whatsNew: model.whatsNew, loginItem: model.loginItem)
         } else if !model.vault.isOpen {
             LockedPage(model: model)
         } else {
@@ -103,7 +111,7 @@ struct MainView: View {
             case .conditions: ConditionsPage(model: model)
             case .activity: ActivityPage(model: model)
             case .help: HelpPage()
-            case .about: AboutPage(updates: model.updates, whatsNew: model.whatsNew)
+            case .about: AboutPage(updates: model.updates, whatsNew: model.whatsNew, loginItem: model.loginItem)
             }
         }
     }
@@ -158,38 +166,15 @@ private struct Sidebar: View {
     }
 
     private func item(for item: Page) -> some View {
-        let isSelected = page == item
-        return Button { page = item } label: {
-            HStack(spacing: 10) {
-                Image(systemName: item.symbol)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.mint : Theme.secondary)
-                    .frame(width: 20)
-                Text(item.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Theme.primary : Theme.primary.opacity(0.8))
-                Spacer(minLength: 0)
-                if item == .about, model.updates.availableVersion != nil || model.whatsNew.isUnseen {
-                    Circle().fill(Theme.sky).frame(width: 7, height: 7)
-                }
-                if item == .activity, model.vault.isOpen, model.vault.contents.activity.failuresWhileAway > 0 {
-                    Text("\(model.vault.contents.activity.failuresWhileAway)")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.black.opacity(0.75))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Theme.amber, in: Capsule())
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 32)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(isSelected ? Theme.mint.opacity(0.14) : .clear)
-            )
-            .contentShape(Rectangle())
+        SidebarItem(page: item, isSelected: page == item, badge: badge(for: item)) { page = item }
+    }
+
+    private func badge(for item: Page) -> SidebarItem.Badge? {
+        if item == .about, model.updates.availableVersion != nil || model.whatsNew.isUnseen { return .dot }
+        if item == .activity, model.vault.isOpen, model.vault.contents.activity.failuresWhileAway > 0 {
+            return .count(model.vault.contents.activity.failuresWhileAway)
         }
-        .buttonStyle(.plain)
+        return nil
     }
 
     private var statusFooter: some View {
@@ -218,6 +203,61 @@ private struct Sidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct SidebarItem: View {
+    enum Badge: Equatable {
+        case dot
+        case count(Int)
+    }
+
+    let page: Page
+    let isSelected: Bool
+    let badge: Badge?
+    let select: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 10) {
+                Image(systemName: page.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSelected ? Theme.mint : Theme.secondary)
+                    .frame(width: 20)
+                Text(page.rawValue)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected || isHovered ? Theme.primary : Theme.primary.opacity(0.8))
+                Spacer(minLength: 0)
+                switch badge {
+                case .dot:
+                    Circle().fill(Theme.sky).frame(width: 7, height: 7)
+                case .count(let count):
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.black.opacity(0.75))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Theme.amber, in: Capsule())
+                case nil:
+                    EmptyView()
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(isSelected ? Theme.mint.opacity(0.14) : (isHovered ? Color.white.opacity(0.05) : .clear))
+            )
+            .overlay(alignment: .leading) {
+                Capsule().fill(Theme.mint).frame(width: 3, height: isSelected ? 16 : 0).offset(x: -6)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isSelected)
     }
 }
 
@@ -290,6 +330,28 @@ struct OverviewPage: View {
     var body: some View {
         hero
 
+        if let error = vault.saveError {
+            Banner(symbol: "externaldrive.badge.exclamationmark", tint: Theme.coral, title: "Sesame couldn't save your changes",
+                   detail: "\(error) Recent changes may be lost when Sesame quits. Check that your disk isn't full.")
+        }
+        if vault.restoredFromBackup {
+            Banner(symbol: "arrow.counterclockwise.circle.fill", tint: Theme.amber, title: "Restored from the last good copy",
+                   detail: "Sesame's saved data was damaged, so it went back to the copy from the last time it opened. Recent changes may be missing.")
+        }
+        if !model.loginItem.isOn, vault.hasPassword {
+            Banner(symbol: "power", tint: Theme.sky, title: "Open Sesame when you log in",
+                   detail: model.loginItem.needsApproval
+                       ? "Allow Sesame under Login Items in System Settings."
+                       : "Face unlock only works while Sesame is running. Without this, a restart turns it off.") {
+                if model.loginItem.needsApproval {
+                    Button("Open Settings") { model.loginItem.openSystemSettings() }
+                } else {
+                    Button("Turn on") { model.loginItem.set(true) }
+                        .buttonStyle(FilledButtonStyle(color: Theme.sky))
+                }
+            }
+        }
+
         if model.whatsNew.isUnseen, let release = model.whatsNew.release {
             Banner(symbol: "sparkles", tint: Theme.mint, title: "Updated to Sesame \(release.version)",
                    detail: release.changes.first) {
@@ -318,7 +380,58 @@ struct OverviewPage: View {
             setup
         } else {
             stats
+            week
             recent
+        }
+    }
+
+    /// Unlocks and failed attempts for each of the last seven days.
+    private var week: some View {
+        let days = vault.contents.activity.daily(days: 7, endingAt: Date(), calendar: .current)
+        let peak = max(days.map { $0.unlocks + $0.failures }.max() ?? 0, 1)
+        let unlocks = days.map(\.unlocks).reduce(0, +)
+        let failures = days.map(\.failures).reduce(0, +)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("This week").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.primary)
+                Spacer()
+                legend(Theme.mint, "\(unlocks) \(unlocks == 1 ? "unlock" : "unlocks")")
+                legend(Theme.amber, "\(failures) failed").padding(.leading, 10)
+            }
+            HStack(alignment: .bottom, spacing: 10) {
+                ForEach(days) { day in
+                    VStack(spacing: 6) {
+                        VStack(spacing: 2) {
+                            Spacer(minLength: 0)
+                            if day.failures > 0 {
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .fill(Theme.amber)
+                                    .frame(height: max(4, 56 * CGFloat(day.failures) / CGFloat(peak)))
+                            }
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(day.unlocks > 0 ? Theme.mint : Color.white.opacity(0.08))
+                                .frame(height: day.unlocks > 0 ? max(4, 56 * CGFloat(day.unlocks) / CGFloat(peak)) : 3)
+                        }
+                        .frame(height: 62)
+                        Text(day.date.formatted(.dateTime.weekday(.narrow)))
+                            .font(.system(size: 10, weight: Calendar.current.isDateInToday(day.date) ? .bold : .regular))
+                            .foregroundStyle(Calendar.current.isDateInToday(day.date) ? Theme.primary : Theme.tertiary)
+                    }
+                    .frame(maxWidth: 44)
+                    .frame(maxWidth: .infinity)
+                    .help("\(day.date.formatted(.dateTime.weekday(.wide))): \(day.unlocks) unlocked, \(day.failures) failed")
+                }
+            }
+        }
+        .padding(16)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
+    }
+
+    private func legend(_ color: Color, _ text: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(text).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
         }
     }
 
@@ -336,6 +449,11 @@ struct OverviewPage: View {
                 Button("Update password") { open(.password) }.tint(Theme.coral)
             } else if case .off = status {
                 Button("Conditions") { open(.conditions) }
+            } else if case .pausedByUser = status {
+                Button("Turn back on") { model.pause(nil) }
+                    .buttonStyle(FilledButtonStyle(color: Theme.amber))
+            } else if status == .ready {
+                PauseMenu(model: model)
             }
         }
         .padding(20)
@@ -629,6 +747,17 @@ struct SecurityPage: View {
                 }
             }
 
+            SectionHeader(text: "Feedback")
+            Card {
+                SettingRow(icon: "bell.badge.fill", tint: Theme.amber, title: "Alert me about failed attempts", detail: "A notification after you unlock, if someone else tried while you were away.") {
+                    Switch(isOn: binding(\.alertsOnFailedAttempts))
+                }
+                RowDivider()
+                SettingRow(icon: "speaker.wave.2.fill", tint: Theme.sky, title: "Play a sound when unlocked", detail: "A short chime when face unlock signs you in.") {
+                    Switch(isOn: binding(\.playsUnlockSound))
+                }
+            }
+
             SectionHeader(text: "Always on")
             Card {
                 SettingRow(icon: "hand.raised.fill", tint: Theme.secondary, title: "Pauses after 5 failed attempts", detail: "Until the Mac is unlocked another way.")
@@ -706,11 +835,30 @@ struct ActivityRow: View {
 struct ActivityPage: View {
     let model: AppModel
 
+    private enum Filter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case unlocks = "Unlocks"
+        case failed = "Failed"
+
+        var id: Self { self }
+
+        func includes(_ kind: ActivityEntry.Kind) -> Bool {
+            switch self {
+            case .all: return true
+            case .unlocks: return kind == .unlocked
+            case .failed: return kind != .unlocked
+            }
+        }
+    }
+
+    @State private var filter = Filter.all
+
     private var history: ActivityHistory { model.vault.contents.activity }
 
     private var days: [(Date, [ActivityEntry])] {
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: history.entries) { calendar.startOfDay(for: $0.date) }
+        let shown = history.entries.filter { filter.includes($0.kind) }
+        let grouped = Dictionary(grouping: shown) { calendar.startOfDay(for: $0.date) }
         return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
     }
 
@@ -731,6 +879,17 @@ struct ActivityPage: View {
         if entries.isEmpty {
             Card {
                 SettingRow(icon: "clock", tint: Theme.secondary, title: "No activity yet", detail: "Unlocks and failed attempts will show up here.")
+            }
+        } else {
+            Picker("", selection: $filter) {
+                ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 240)
+            .padding(.top, 4)
+            if days.isEmpty {
+                Text("Nothing here for this filter.").font(.system(size: 12.5)).foregroundStyle(Theme.secondary).padding(.leading, 4)
             }
         }
 
@@ -763,6 +922,7 @@ struct ActivityPage: View {
 struct AboutPage: View {
     let updates: UpdateService
     let whatsNew: WhatsNew
+    let loginItem: LoginItem
 
     private var updateDetail: String {
         if let error = updates.lastError { return "Last check failed: \(error)" }
@@ -816,6 +976,20 @@ struct AboutPage: View {
                 .padding(.vertical, 10)
             }
             .onAppear { whatsNew.markSeen() }
+        }
+
+        SectionHeader(text: "General")
+        Card {
+            SettingRow(icon: "power", tint: Theme.mint, title: "Open at login",
+                       detail: loginItem.error ?? (loginItem.needsApproval
+                           ? "Allow Sesame under Login Items in System Settings."
+                           : "Face unlock only works while Sesame is running. It asks for Touch ID when it starts.")) {
+                if loginItem.needsApproval {
+                    Button("Open Settings") { loginItem.openSystemSettings() }
+                } else {
+                    Switch(isOn: Binding(get: { loginItem.isOn }, set: { loginItem.set($0) }))
+                }
+            }
         }
 
         if updates.isEnabled {
