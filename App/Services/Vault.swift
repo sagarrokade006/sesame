@@ -163,6 +163,9 @@ final class Vault {
 
     private var fileExists: Bool { FileManager.default.fileExists(atPath: Self.fileURL.path) }
 
+    /// Whether Sesame has been set up on this Mac before, without opening anything.
+    static var hasSavedData: Bool { FileManager.default.fileExists(atPath: fileURL.path) }
+
     func open() async throws {
         let mayCreate = !fileExists
         let opened: SymmetricKey

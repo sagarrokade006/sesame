@@ -1,0 +1,21 @@
+# Changelog
+
+Every release of Sesame, newest first. The app shows the latest entry after it updates, and the update window shows it
+before you install.
+
+## 1.0.1
+
+- Face unlock now needs a clear view of your face. A partly covered face, or a photo held over someone else's face,
+  can no longer unlock your Mac, even if it blinks.
+- Adding a face now happens in the notch, right under the camera, and stays visible even when Sesame's window is behind
+  other apps.
+- Sesame comes back to the front after you approve Touch ID, the camera, or Accessibility, instead of staying hidden.
+- See what's new after each update, on Overview and in About, and in the update window before installing.
+- The daily update check now always notifies you when there's a new version.
+
+## 1.0.0
+
+- First public release.
+- Face unlock that types your Mac password at the lock screen, with a blink or head movement as proof of life.
+- Conditions: only unlock on trusted Wi-Fi, near a Bluetooth device, or during set hours.
+- Updates from inside the app, with your faces, password, and permissions kept.

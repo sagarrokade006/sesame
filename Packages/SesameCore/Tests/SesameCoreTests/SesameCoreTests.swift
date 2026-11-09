@@ -70,29 +70,41 @@ private struct Run {
 
     @Test func aStrangerFrameErasesProof() {
         var run = Run()
-        run.blink(.doubtful)
+        run.blink(owner)
         run.frame(.stranger)
         run.frames(owner, count: 20)
         #expect(!run.unlocked)
     }
 
-    @Test func aBlinkDuringDoubtStillCounts() {
+    /// A half-covered face, or a photo held over someone else's face, only scores borderline. A blink seen there
+    /// must never vouch for a later clear match.
+    @Test func aBlinkDuringDoubtDoesNotCount() {
         var run = Run()
         run.blink(.doubtful)
+        run.frames(owner, count: 20)
+        #expect(!run.unlocked)
+    }
+
+    @Test func doubtfulFramesNeitherProveNorErase() {
+        var run = Run()
+        run.blink(owner)
+        run.frames(.doubtful, count: 5)
         run.frames(owner, count: 3)
         #expect(run.unlocked)
     }
 
     @Test func oneOrTwoMatchingFramesAreNotEnough() {
         var run = Run()
-        run.blink(.doubtful)
+        run.blink(owner)
+        // A borderline frame keeps the proof but restarts the streak of clear matches.
+        run.frame(.doubtful)
         run.frames(owner, count: 2)
         #expect(!run.unlocked)
     }
 
     @Test func aLongAbsenceErasesProof() {
         var run = Run()
-        run.blink(.doubtful)
+        run.blink(owner)
         run.noFace(for: 1)
         run.frames(owner, count: 20)
         #expect(!run.unlocked)
@@ -100,7 +112,7 @@ private struct Run {
 
     @Test func aBriefDropoutKeepsProof() {
         var run = Run()
-        run.blink(.doubtful)
+        run.blink(owner)
         run.noFace(for: 0.1)
         run.frames(owner, count: 3)
         #expect(run.unlocked)
@@ -108,14 +120,14 @@ private struct Run {
 
     @Test func closedEyesDoNotCountTowardTheStreak() {
         var run = Run()
-        run.blink(.doubtful)
+        run.blink(owner)
         for _ in 0..<20 { run.frame(owner, eyes: 0.05) }
         #expect(!run.unlocked)
     }
 
     @Test func lookingAwayDoesNotCountTowardTheStreak() {
         var run = Run()
-        run.blink(.doubtful)
+        run.blink(owner)
         for _ in 0..<20 { run.frame(owner, yaw: 0.7) }
         #expect(!run.unlocked)
     }
@@ -206,7 +218,7 @@ private struct Run {
         var finding = LivenessJudge.Finding.undecided
         for step in 0..<10 {
             let yaw = Double(step) * 0.04
-            finding = judge.observe(reading(Double(step) * 0.05, yaw: yaw, shift: yaw * 0.6), countsAsProof: true)
+            finding = judge.observe(reading(Double(step) * 0.05, yaw: yaw, shift: yaw * 0.6), as: .proof)
         }
         #expect(finding == .alive)
     }
@@ -215,7 +227,7 @@ private struct Run {
         var judge = LivenessJudge()
         var finding = LivenessJudge.Finding.undecided
         for step in 0..<20 {
-            finding = judge.observe(reading(Double(step) * 0.05, yaw: Double(step) * 0.04, shift: 0.01), countsAsProof: true)
+            finding = judge.observe(reading(Double(step) * 0.05, yaw: Double(step) * 0.04, shift: 0.01), as: .proof)
         }
         #expect(finding == .undecided)
     }
@@ -225,7 +237,7 @@ private struct Run {
         var finding = LivenessJudge.Finding.undecided
         let eyes = [0.3, 0.3] + [Double](repeating: 0.1, count: 20) + [0.3, 0.3]
         for (index, value) in eyes.enumerated() {
-            finding = judge.observe(reading(Double(index) * 0.05, eyes: value), countsAsProof: true)
+            finding = judge.observe(reading(Double(index) * 0.05, eyes: value), as: .proof)
         }
         #expect(finding == .undecided)
     }

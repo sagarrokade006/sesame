@@ -17,6 +17,7 @@ struct FacesPage: View {
                     vault.update { $0.profiles.append(finished) }
                 }
                 enrollment.stop()
+                NotchScanner.shared.hide()
                 self.enrollment = nil
             }
         } else if vault.contents.profiles.isEmpty {
@@ -94,9 +95,11 @@ struct FacesPage: View {
             guard await vault.requireApproval("add a face to Sesame"),
                   await AVCaptureDevice.requestAccess(for: .video)
             else { return }
+            AppModel.bringToFront()
             let session = Enrollment()
             session.start()
             enrollment = session
+            NotchScanner.shared.show(session)
         }
     }
 }
@@ -194,6 +197,24 @@ final class Enrollment {
         if scan.stage == .complete { camera.stop() }
     }
 
+    #if DEBUG
+    /// For snapshots: feeds made-up head poses through the real scan, lighting part of the ring.
+    func simulateScan(share: Double) {
+        let vector = FaceVector([1, 0, 0])
+        var time = 0.0
+        for _ in 0..<8 {
+            time += 0.2
+            scan.observe(vector: vector, yaw: 0, pitch: 0, time: time, isWellPlaced: true)
+        }
+        let steps = Int(Double(FaceScan.tickCount) * share)
+        for step in 0..<steps {
+            time += 0.2
+            let angle = Double(step) / Double(FaceScan.tickCount) * 2 * .pi
+            scan.observe(vector: vector, yaw: -sin(angle) * 0.4, pitch: -cos(angle) * 0.3, time: time, isWellPlaced: true)
+        }
+    }
+    #endif
+
     func makeProfile() -> FaceProfile {
         FaceProfile(
             name: name.trimmingCharacters(in: .whitespaces),
@@ -204,6 +225,8 @@ final class Enrollment {
     }
 }
 
+/// The window's half of adding a face. The camera and ring show in the notch, right under the camera you're looking
+/// at; this tracks progress and, once the scan is done, asks for a name.
 private struct EnrollmentPanel: View {
     @Bindable var enrollment: Enrollment
     let finish: (FaceProfile?) -> Void
@@ -213,27 +236,48 @@ private struct EnrollmentPanel: View {
     var body: some View {
         Card {
             VStack(spacing: 16) {
-                FaceScannerDial(scan: enrollment.scan) {
-                    CameraPreview(session: enrollment.camera.session)
+                if isComplete {
+                    ScanMark(state: .success).frame(width: 64, height: 64)
+                } else {
+                    ZStack {
+                        Hexagon().fill(Theme.mint.opacity(0.1))
+                        Image(systemName: "arrow.up").font(.system(size: 24, weight: .semibold)).foregroundStyle(Theme.mint)
+                    }
+                    .frame(width: 64, height: 64)
                 }
 
-                Text(scannerPrompt(for: enrollment.scan.stage))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.primary)
-                    .contentTransition(.opacity)
-                    .animation(.easeOut(duration: 0.2), value: enrollment.scan.stage)
+                VStack(spacing: 4) {
+                    Text(isComplete ? "Face scanned" : scannerPrompt(for: enrollment.scan.stage))
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.primary)
+                        .contentTransition(.opacity)
+                    Text(isComplete ? "Give this face a name." : "Look at the camera. Your scan is showing at the top of the screen.")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.secondary)
+                }
+                .animation(.easeOut(duration: 0.2), value: enrollment.scan.stage)
 
                 if isComplete {
                     TextField("Name", text: $enrollment.name)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 260)
+                        .onSubmit(save)
+                } else {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.08))
+                            Capsule().fill(Theme.mint).frame(width: max(6, proxy.size.width * enrollment.scan.progress))
+                        }
+                    }
+                    .frame(width: 260, height: 6)
+                    .animation(.easeOut(duration: 0.2), value: enrollment.scan.progress)
                 }
 
                 HStack {
                     Button("Cancel") { finish(nil) }
                     Spacer()
                     if isComplete {
-                        Button("Save") { finish(enrollment.makeProfile()) }
+                        Button("Save", action: save)
                             .buttonStyle(FilledButtonStyle(color: Theme.mint))
                             .disabled(enrollment.name.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
@@ -242,6 +286,14 @@ private struct EnrollmentPanel: View {
             .padding(20)
             .frame(maxWidth: .infinity)
         }
+        .onChange(of: isComplete) { _, done in
+            if done { AppModel.bringToFront() }
+        }
+    }
+
+    private func save() {
+        guard !enrollment.name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        finish(enrollment.makeProfile())
     }
 }
 
@@ -257,10 +309,9 @@ func scannerPrompt(for stage: FaceScan.Stage) -> String {
 /// The round camera view with its ring of tick marks.
 struct FaceScannerDial<Preview: View>: View {
     let scan: FaceScan
+    var previewSize: CGFloat = 212
+    var dialSize: CGFloat = 276
     @ViewBuilder let preview: Preview
-
-    private let previewSize: CGFloat = 212
-    private let dialSize: CGFloat = 276
 
     var body: some View {
         ZStack {
@@ -270,7 +321,7 @@ struct FaceScannerDial<Preview: View>: View {
                 Capsule()
                     .fill(isActive ? Color.white : (isLit ? Theme.mint : Color.white.opacity(0.2)))
                     .frame(width: 3.5, height: isActive ? 24 : (isLit ? 20 : 14))
-                    .offset(y: -(dialSize / 2 - 14))
+                    .offset(y: -(dialSize / 2 - dialSize * 0.05))
                     .rotationEffect(.degrees(Double(tick) / Double(FaceScan.tickCount) * 360))
                     .animation(.spring(response: 0.28, dampingFraction: 0.7), value: isLit)
                     .animation(.easeOut(duration: 0.12), value: isActive)
@@ -295,7 +346,7 @@ struct FaceScannerDial<Preview: View>: View {
     }
 }
 
-private struct CameraPreview: NSViewRepresentable {
+struct CameraPreview: NSViewRepresentable {
     let session: AVCaptureSession
 
     func makeNSView(context: Context) -> NSView {

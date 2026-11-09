@@ -173,7 +173,7 @@ final class LockBadge {
 }
 
 /// The black shape: flush with the top edge, flaring into it at the sides, and rounded at the bottom.
-private struct NotchBody: Shape {
+struct NotchBody: Shape {
     var flare: CGFloat
     var bottomRadius: CGFloat
 

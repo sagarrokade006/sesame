@@ -93,7 +93,8 @@ final class UpdateService {
 
     /// Shows Sparkle's window, which either offers the update or says Sesame is up to date.
     func checkNow() {
-        NSApp.activate()
+        watcher.isUserInitiated = true
+        AppModel.bringToFront()
         controller?.checkForUpdates(nil)
     }
 }
@@ -104,15 +105,17 @@ private nonisolated final class UpdateWatcher: NSObject, SPUUpdaterDelegate, @un
     @MainActor var onNotFound: (() -> Void)?
     @MainActor var onFailed: ((String) -> Void)?
     @MainActor var onFinishedCheck: (() -> Void)?
+    /// Set while a check the person started with Check now is running.
+    @MainActor var isUserInitiated = false
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         updateLog.notice("found \(item.displayVersionString, privacy: .public) (\(item.versionString, privacy: .public))")
         let version = item.displayVersionString
         Task { @MainActor in
             self.onFound?(version)
-            // A check someone started from the app shows Sparkle's window. A background check while Sesame isn't in
-            // front would otherwise go unnoticed, so it posts a notification.
-            if !NSApp.isActive { UpdateNotification.post(version: version) }
+            // A check someone started with Check now shows Sparkle's window. A daily check in the background would
+            // otherwise go unnoticed, so it posts a notification.
+            if !self.isUserInitiated { UpdateNotification.post(version: version) }
         }
     }
 
@@ -131,7 +134,10 @@ private nonisolated final class UpdateWatcher: NSObject, SPUUpdaterDelegate, @un
     }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
-        Task { @MainActor in self.onFinishedCheck?() }
+        Task { @MainActor in
+            self.isUserInitiated = false
+            self.onFinishedCheck?()
+        }
     }
 
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {

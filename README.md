@@ -25,6 +25,11 @@ next to About. Click **Update** to see what's new and install it; Sesame restart
 
 ![An update waiting on Overview](docs/update.png)
 
+After it updates, Sesame tells you what changed, on Overview and in About. Every release's notes are in
+[CHANGELOG.md](App/Resources/CHANGELOG.md).
+
+![What's new after an update](docs/updated.png)
+
 Your faces, password, settings, and macOS permissions carry over, because every release is signed by the same Apple
 team. Every update is also checked against Sesame's own update key before it's installed, so only releases
 from this repository can replace it.
@@ -42,7 +47,11 @@ from this repository can replace it.
 | ![Help](docs/help.png) | ![About](docs/about.png) |
 | **Help.** Searchable answers to common problems. | **About.** Version and updates. |
 
-At the lock screen, Sesame shows its progress in the notch:
+Adding a face happens in the notch, right under the camera you're looking at:
+
+<p align="center"><img src="docs/notch-scan.png" width="320" alt="Scanning a face in the notch"></p>
+
+At the lock screen, Sesame shows its progress in the notch too:
 
 | Scanning | Turn your head | Unlocked | Not recognized |
 |---|---|---|---|
@@ -51,8 +60,9 @@ At the lock screen, Sesame shows its progress in the notch:
 ## How it protects you
 
 - Touch ID or your Mac password is needed after every restart and every 48 hours by default.
-- Recognition needs several matching frames in a row, plus proof of life: a blink or a natural head movement. A face
-  surrounded by a phone or picture frame is rejected.
+- Recognition needs several clear matches in a row, plus proof of life: a blink or a natural head movement, seen on a
+  face that clearly matches. A partly covered face, or a photo held over someone else's face, can't unlock or vouch for
+  a blink. A face surrounded by a phone or picture frame is rejected.
 - Face unlock pauses after 5 failed attempts until the Mac is unlocked another way.
 - Adding a face, changing the saved password, and changing security settings need fresh authentication.
 - Optional conditions limit unlocking to trusted Wi-Fi, a connected Bluetooth device, or set hours.
@@ -96,6 +106,10 @@ Releases are numbered `1.0.0`, `1.0.1`, `1.0.2`, and so on: each takes the next 
 `MARKETING_VERSION` in the Xcode project. Set it to `1.1.0` to start the next series. The build number is the commit
 count, which is what installed copies compare to decide that a release is newer.
 
+Before releasing, add a `## <version>` section to [CHANGELOG.md](App/Resources/CHANGELOG.md). Both release paths refuse
+to publish without one. Its bullets become the GitHub release notes, the update window's notes, and the app's What's
+New.
+
 ### From your Mac
 
 ```bash
@@ -107,7 +121,8 @@ Run it on `main` with everything pushed. It tests, builds, signs, signs the upda
 
 ### From GitHub Actions
 
-Every push to `main` that changes the app runs the same steps on GitHub. Pushes that only touch the README or docs
+The workflows are turned off; turn **Release** back on in the Actions tab to use it. Then every push to `main` that
+changes the app runs the same steps on GitHub. Pushes that only touch the README or docs
 don't release. Run the **Release** workflow from the Actions tab by hand and switch off **Publish** to test the
 pipeline without releasing.
 

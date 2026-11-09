@@ -78,19 +78,34 @@ public struct LivenessJudge: Sendable {
         sawDepth = false
     }
 
-    /// `countsAsProof` is false for a face that can't be the owner, so it can only ever add spoof evidence.
-    public mutating func observe(_ reading: FaceReading, countsAsProof: Bool) -> Finding {
+    /// What a frame may contribute, decided by how well its face matches the owner.
+    public enum Evidence: Sendable, Equatable {
+        /// Clearly the owner: may show a blink or head movement.
+        case proof
+        /// Borderline: proves nothing, but doesn't erase proof either. A blink seen only here never counts, so a
+        /// half-covered face or a photo held over someone else's can't borrow a real eye's blink.
+        case neutral
+        /// Someone else: erases proof, so their liveness can't help a later match.
+        case against
+    }
+
+    /// Spoof evidence is gathered from every face, whatever it matches.
+    public mutating func observe(_ reading: FaceReading, as evidence: Evidence) -> Finding {
         recentFraming.append(reading.isFramedByRectangle)
         if recentFraming.count > recentFrameCount { recentFraming.removeFirst() }
         if recentFraming.filter({ $0 }).count >= framedFramesForSpoof {
             return .spoof
         }
-        guard countsAsProof else {
+        switch evidence {
+        case .against:
             forgetProof()
             return .undecided
+        case .neutral:
+            break
+        case .proof:
+            trackBlink(reading)
+            trackDepth(reading)
         }
-        trackBlink(reading)
-        trackDepth(reading)
         return sawBlink || sawDepth ? .alive : .undecided
     }
 

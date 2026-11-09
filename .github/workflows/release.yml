@@ -14,6 +14,7 @@ on:
       - 'tools/build_release.sh'
       - 'tools/make_appcast.py'
       - 'tools/next_version.sh'
+      - 'tools/changelog.py'
       - '.github/workflows/release.yml'
   workflow_dispatch:
     inputs:
@@ -54,6 +55,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
           echo "Releasing $VERSION ($BUILD)"
+          python3 tools/changelog.py "$VERSION" markdown > "$RUNNER_TEMP/notes.md"
 
       - name: Check signing is set up
         env:
@@ -115,7 +117,7 @@ jobs:
           SIGNATURE="$(echo "$OUTPUT" | sed -E 's/.*edSignature="([^"]+)".*/\1/')"
           LENGTH="$(stat -f%z "$DMG")"
           swift tools/verify_update_signature.swift "$DMG" "$SIGNATURE"
-          python3 tools/make_appcast.py "$VERSION" "${{ steps.version.outputs.build }}" "$SIGNATURE" "$LENGTH" build/release/appcast.xml
+          NOTES_HTML="$(python3 tools/changelog.py "$VERSION" html)" python3 tools/make_appcast.py "$VERSION" "${{ steps.version.outputs.build }}" "$SIGNATURE" "$LENGTH" build/release/appcast.xml
 
       - name: Keep the DMG from a dry run
         if: github.event_name == 'workflow_dispatch' && !inputs.publish
@@ -137,7 +139,7 @@ jobs:
             build/release/appcast.xml \
             --target "$GITHUB_SHA" \
             --title "Sesame $VERSION" \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/notes.md"
 
       - name: Remove the signing keychain
         if: always() && steps.certificate.outputs.keychain != ''

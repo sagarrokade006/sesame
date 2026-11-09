@@ -66,7 +66,12 @@ public struct UnlockAttempt: Sendable {
         }
         lastSeenAt = reading.time
 
-        let finding = judge.observe(reading, countsAsProof: verdict != .stranger)
+        let evidence: LivenessJudge.Evidence = switch verdict {
+        case .owner: .proof
+        case .doubtful: .neutral
+        case .stranger: .against
+        }
+        let finding = judge.observe(reading, as: evidence)
         if finding == .spoof { return .spoof }
         if verdict == .stranger { forgetContinuity() } else { challenge?.observe(yaw: reading.yaw) }
 

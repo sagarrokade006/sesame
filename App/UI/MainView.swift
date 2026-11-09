@@ -91,7 +91,7 @@ struct MainView: View {
         if page == .help {
             HelpPage()
         } else if page == .about {
-            AboutPage(updates: model.updates)
+            AboutPage(updates: model.updates, whatsNew: model.whatsNew)
         } else if !model.vault.isOpen {
             LockedPage(model: model)
         } else {
@@ -103,7 +103,7 @@ struct MainView: View {
             case .conditions: ConditionsPage(model: model)
             case .activity: ActivityPage(model: model)
             case .help: HelpPage()
-            case .about: AboutPage(updates: model.updates)
+            case .about: AboutPage(updates: model.updates, whatsNew: model.whatsNew)
             }
         }
     }
@@ -169,7 +169,7 @@ private struct Sidebar: View {
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Theme.primary : Theme.primary.opacity(0.8))
                 Spacer(minLength: 0)
-                if item == .about, model.updates.availableVersion != nil {
+                if item == .about, model.updates.availableVersion != nil || model.whatsNew.isUnseen {
                     Circle().fill(Theme.sky).frame(width: 7, height: 7)
                 }
                 if item == .activity, model.vault.isOpen, model.vault.contents.activity.failuresWhileAway > 0 {
@@ -289,6 +289,22 @@ struct OverviewPage: View {
 
     var body: some View {
         hero
+
+        if model.whatsNew.isUnseen, let release = model.whatsNew.release {
+            Banner(symbol: "sparkles", tint: Theme.mint, title: "Updated to Sesame \(release.version)",
+                   detail: release.changes.first) {
+                HStack(spacing: 8) {
+                    Button("What's new") { open(.about) }
+                        .buttonStyle(FilledButtonStyle(color: Theme.mint))
+                    Button { model.whatsNew.markSeen() } label: {
+                        Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.secondary)
+                    .help("Dismiss")
+                }
+            }
+        }
 
         if let version = model.updates.availableVersion {
             Banner(symbol: "arrow.down.circle.fill", tint: Theme.sky, title: "Sesame \(version) is available",
@@ -764,6 +780,7 @@ struct ActivityPage: View {
 
 struct AboutPage: View {
     let updates: UpdateService
+    let whatsNew: WhatsNew
 
     private var updateDetail: String {
         if let error = updates.lastError { return "Last check failed: \(error)" }
@@ -787,6 +804,37 @@ struct AboutPage: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .padding(.bottom, 10)
+
+        if let release = whatsNew.release {
+            SectionHeader(text: "What's new in \(release.version)")
+            Card {
+                ForEach(Array(release.changes.enumerated()), id: \.offset) { index, change in
+                    if index > 0 { RowDivider(inset: 44) }
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Image(systemName: "sparkle")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.mint)
+                            .frame(width: 16)
+                        Text(change)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                }
+                RowDivider(inset: 16)
+                Link(destination: URL(string: "https://github.com/sagarrokade006/sesame/releases")!) {
+                    Label("Every release", systemImage: "arrow.up.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.mint)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+            .onAppear { whatsNew.markSeen() }
+        }
 
         if updates.isEnabled {
             SectionHeader(text: "Updates")

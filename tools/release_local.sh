@@ -24,6 +24,10 @@ git fetch -q origin main
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || stop "Push main first (or pull), so the release matches GitHub."
 read -r VERSION BUILD < <(tools/next_version.sh)
 echo "Releasing $VERSION ($BUILD) from $(git rev-parse --short HEAD)"
+# Every release needs its notes: they show in the update window, in the app after updating, and on GitHub.
+NOTES_MARKDOWN="$(python3 tools/changelog.py "$VERSION" markdown)" || exit 1
+NOTES_HTML="$(python3 tools/changelog.py "$VERSION" html)"
+printf '%s\n' "$NOTES_MARKDOWN"
 
 step "Finding the signing certificate"
 IDENTITY="$(security find-identity -v -p codesigning | grep "Apple Development" | grep -m1 -o '[0-9A-F]\{40\}' || true)"
@@ -52,12 +56,12 @@ let file = try Data(contentsOf: URL(fileURLWithPath: environment["DMG"]!))
 print(try key.signature(for: file).base64EncodedString())')"
 unset UPDATE_KEY
 swift tools/verify_update_signature.swift "$DMG" "$SIGNATURE"
-python3 tools/make_appcast.py "$VERSION" "$BUILD" "$SIGNATURE" "$(stat -f%z "$DMG")" build/release/appcast.xml
+NOTES_HTML="$NOTES_HTML" python3 tools/make_appcast.py "$VERSION" "$BUILD" "$SIGNATURE" "$(stat -f%z "$DMG")" build/release/appcast.xml
 
 step "Publishing v$VERSION"
 gh release create "v$VERSION" "$DMG" build/release/appcast.xml \
     -R "$REPOSITORY" \
     --target "$(git rev-parse HEAD)" \
     --title "Sesame $VERSION" \
-    --generate-notes
+    --notes "$NOTES_MARKDOWN"
 echo "Published: https://github.com/$REPOSITORY/releases/tag/v$VERSION"

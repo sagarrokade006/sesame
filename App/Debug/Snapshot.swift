@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Renders each page with sample data to PNGs, then quits. Debug builds only:
 /// SESAME_SNAPSHOT_DIR=/some/folder Sesame.app/Contents/MacOS/Sesame
-/// Optional: SESAME_SNAPSHOT_PAGES=overview,faces  SESAME_SNAPSHOT_SCENARIO=new|locked|keymissing|restart|update  SESAME_SNAPSHOT_HEIGHT=900
+/// Optional: SESAME_SNAPSHOT_PAGES=overview,faces  SESAME_SNAPSHOT_SCENARIO=new|locked|keymissing|restart|update|updated  SESAME_SNAPSHOT_HEIGHT=900
 @MainActor
 enum Snapshot {
     static var folder: URL? {
@@ -27,6 +27,7 @@ enum Snapshot {
         let model = AppModel()
         model.permissions.pretend(granted: scenario != "new")
         if scenario == "restart" { model.permissions.pretendAskedButNotApplied() }
+        if scenario == "updated" { model.whatsNew.pretendUnseen() }
         model.updates.pretend(available: scenario == "update" ? "0.3.12" : nil, lastChecked: Date().addingTimeInterval(-2 * 3600))
         switch scenario {
         case "new": model.vault.openForSnapshot(VaultContents())
@@ -40,6 +41,12 @@ enum Snapshot {
             .split(separator: ",").compactMap { name in Page.allCases.first { $0.rawValue.lowercased() == name.lowercased() } }
             ?? Page.allCases
         let size = CGSize(width: MainView.size.width, height: Double(environment["SESAME_SNAPSHOT_HEIGHT"] ?? "") ?? MainView.size.height)
+        if environment["SESAME_SNAPSHOT_PAGES"]?.contains("notch") == true {
+            let enrollment = Enrollment()
+            enrollment.simulateScan(share: 0.45)
+            let view = NotchScanner.snapshot(enrollment).background(Color(white: 0.85)).preferredColorScheme(.dark)
+            write(view, size: CGSize(width: 420, height: 400), to: folder.appendingPathComponent("notch-scan.png"))
+        }
         for page in pages {
             let view = MainView(model: model, page: page)
                 .frame(width: size.width, height: size.height)

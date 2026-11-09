@@ -41,7 +41,9 @@ public struct FaceProfile: Codable, Sendable, Identifiable, Equatable {
 }
 
 public enum FaceVerdict: Sendable, Equatable {
+    /// Clearly the owner.
     case owner(name: String)
+    /// Close to the owner but not clear enough to unlock, such as mid-blink, turned away, or partly covered.
     case doubtful
     case stranger
 }
@@ -52,14 +54,27 @@ public struct MatchRule: Codable, Sendable, Equatable {
     /// At or above this a face may still be the owner, mid-blink or turned away.
     public var doubtfulScore: Float = 0.28
 
+    /// How far above `acceptScore` a face must score before it can unlock or vouch for a blink. A clear view of the
+    /// owner scores around 0.85. A face that's half covered, or a photo held over someone else's face, hovers right at
+    /// the threshold, and a frame that only just clears it must not count. A constant rather than a stored setting, so
+    /// saved settings keep loading.
+    public static let confidenceMargin: Float = 0.10
+
     public init() {}
 
-    public func verdict(for vector: FaceVector, among profiles: [FaceProfile], modelVersion: String) -> FaceVerdict {
-        let scored = profiles
+    /// The score that counts as the owner.
+    public var unlockScore: Float { acceptScore + Self.confidenceMargin }
+
+    public func bestScore(for vector: FaceVector, among profiles: [FaceProfile], modelVersion: String) -> (name: String, score: Float)? {
+        profiles
             .filter { $0.isActive && $0.modelVersion == modelVersion }
             .map { (name: $0.name, score: $0.score(for: vector)) }
-        guard let best = scored.max(by: { $0.score < $1.score }) else { return .stranger }
-        if best.score >= acceptScore { return .owner(name: best.name) }
+            .max { $0.score < $1.score }
+    }
+
+    public func verdict(for vector: FaceVector, among profiles: [FaceProfile], modelVersion: String) -> FaceVerdict {
+        guard let best = bestScore(for: vector, among: profiles, modelVersion: modelVersion) else { return .stranger }
+        if best.score >= unlockScore { return .owner(name: best.name) }
         return best.score >= doubtfulScore ? .doubtful : .stranger
     }
 }

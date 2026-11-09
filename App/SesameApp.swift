@@ -46,6 +46,7 @@ final class AppModel {
     let vault = Vault()
     let controller: UnlockController
     let updates = UpdateService()
+    let whatsNew = WhatsNew()
     private(set) var errorMessage: String?
     let permissions = Permissions.shared
 
@@ -65,8 +66,21 @@ final class AppModel {
 
     /// System prompts and System Settings take focus, and a menu bar app isn't brought back automatically.
     static func bringToFront() {
+        raiseMainWindow()
+        // Touch ID, camera, and Accessibility prompts close a moment after they report back, and take focus with them.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { raiseMainWindow() }
+    }
+
+    /// macOS no longer lets an app simply take focus back, so this asks whichever app is in front to hand it over.
+    private static func raiseMainWindow() {
+        let window = NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }
+            ?? NSApp.windows.first { $0.canBecomeMain }
+        if let front = NSWorkspace.shared.frontmostApplication, front != NSRunningApplication.current {
+            NSRunningApplication.current.activate(from: front, options: [])
+        }
         NSApp.activate()
-        NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
+        window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
     }
 
     /// The saved data exists but this copy of Sesame can't decrypt it, such as after switching between a build from
