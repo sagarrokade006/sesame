@@ -8,8 +8,14 @@ public struct UnlockAttempt: Sendable {
         public var maximumFaceGap: TimeInterval = 0.5
         public var strangerPatience: TimeInterval = 2
         public var duration: TimeInterval = 6
+        /// A frame that waited longer than this to be judged says nothing about who is there now.
+        public var maximumFrameAge: TimeInterval = 0.5
 
         public init() {}
+    }
+
+    public func isFresh(capturedAt: TimeInterval, now: TimeInterval) -> Bool {
+        now - capturedAt <= rules.maximumFrameAge
     }
 
     public enum Outcome: Sendable, Equatable {

@@ -336,6 +336,8 @@ struct SecurityPage: View {
                     .frame(width: 120)
                 }
             }
+
+            UnlockRulesSection(vault: vault)
         }
         .disabled(!vault.hasRecentApproval)
         .opacity(vault.hasRecentApproval ? 1 : 0.55)

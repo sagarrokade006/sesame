@@ -78,7 +78,7 @@ final class UnlockController {
         followUp = Task {
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled, !isSleeping, canScan else { return }
-            badge.show(.message("Face unlock is ready", LockBadge.retryHint))
+            badge.show(blocker ?? .message("Face unlock is ready", LockBadge.retryHint))
         }
     }
 
@@ -136,6 +136,9 @@ final class UnlockController {
         if !reader.isReady { return .message("Face unlock unavailable", "The recognition model is missing.") }
         if vault.contents.passwordHealth.isOutdated { return .message("Sesame paused", "Your saved password looks out of date.") }
         if counter.isExhausted { return .message("Sesame paused", "Too many attempts. Enter your password.") }
+        if let unmet = Surroundings.shared.firstUnmet(vault.contents.settings.unlockRules) {
+            return .message("Face unlock is off", unmet.explanation)
+        }
         return nil
     }
 
@@ -177,6 +180,11 @@ final class UnlockController {
 
     private func receive(_ capture: FaceCapture?, at time: TimeInterval, scan: UUID) {
         guard scan == scanID, var current = attempt else { return }
+        // A frame that queued behind a slow one may show a moment that has passed.
+        guard current.isFresh(capturedAt: time, now: ProcessInfo.processInfo.systemUptime) else {
+            scanLog.notice("frame stale")
+            return
+        }
         guard MacLockScreen.isLocked else {
             endScan()
             badge.hide()

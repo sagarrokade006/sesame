@@ -11,6 +11,21 @@ struct SecuritySettings: Codable, Equatable {
     var scansWhenLocking = false
     var trustHours = TrustWindow.defaultHours
     var matchRule = MatchRule()
+    var unlockRules = UnlockRules()
+
+    init() {}
+
+    /// Fills in anything an older vault didn't save, so adding a setting never makes the vault unreadable.
+    init(from decoder: Decoder) throws {
+        let saved = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = SecuritySettings()
+        usesTurnChallenge = try saved.decodeIfPresent(Bool.self, forKey: .usesTurnChallenge) ?? defaults.usesTurnChallenge
+        requiresAttention = try saved.decodeIfPresent(Bool.self, forKey: .requiresAttention) ?? defaults.requiresAttention
+        scansWhenLocking = try saved.decodeIfPresent(Bool.self, forKey: .scansWhenLocking) ?? defaults.scansWhenLocking
+        trustHours = try saved.decodeIfPresent(Int.self, forKey: .trustHours) ?? defaults.trustHours
+        matchRule = try saved.decodeIfPresent(MatchRule.self, forKey: .matchRule) ?? defaults.matchRule
+        unlockRules = try saved.decodeIfPresent(UnlockRules.self, forKey: .unlockRules) ?? defaults.unlockRules
+    }
 }
 
 /// Everything sensitive lives in one encrypted file, including settings, so nothing can be weakened from outside.

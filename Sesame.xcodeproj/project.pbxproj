@@ -180,6 +180,9 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sesame uses the camera on this Mac to recognize your face.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sesame can require a Bluetooth device you choose to be connected before it unlocks.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "macOS only shares the Wi-Fi network name with apps that have Location access. Sesame checks it on this Mac to only unlock on networks you trust.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "macOS only shares the Wi-Fi network name with apps that have Location access. Sesame checks it on this Mac to only unlock on networks you trust.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -206,6 +209,9 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sesame uses the camera on this Mac to recognize your face.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sesame can require a Bluetooth device you choose to be connected before it unlocks.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "macOS only shares the Wi-Fi network name with apps that have Location access. Sesame checks it on this Mac to only unlock on networks you trust.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "macOS only shares the Wi-Fi network name with apps that have Location access. Sesame checks it on this Mac to only unlock on networks you trust.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
