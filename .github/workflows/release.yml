@@ -113,7 +113,7 @@ jobs:
         run: |
           tools/build_release.sh "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.build }}"
           # Every release must carry the same certificate, or macOS treats the update as a different app.
-          codesign -d -r- build/release/derived/Build/Products/Release/Sesame.app 2>&1 | grep -q 'certificate leaf' \
+          codesign -d -r- build/release/derived/Build/Products/Release/Sesame.app 2>&1 | grep -qE 'certificate (leaf|root) = H' \
             || { echo "::error::The app isn't signed with the certificate."; exit 1; }
 
       - name: Sign the update and write the feed

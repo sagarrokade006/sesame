@@ -80,7 +80,7 @@ step "Building"
 SIGNING_IDENTITY="$IDENTITY" SIGNING_KEYCHAIN="$KEYCHAIN" tools/build_release.sh "$VERSION" "$BUILD" | grep -v "replacing existing signature"
 APP="build/release/derived/Build/Products/Release/Sesame.app"
 DMG="build/release/Sesame-$VERSION.dmg"
-codesign -d -r- "$APP" 2>&1 | grep -q 'certificate leaf' || stop "The app isn't signed with the certificate."
+codesign -d -r- "$APP" 2>&1 | grep -qE 'certificate (leaf|root) = H' || stop "The app isn't signed with the certificate."
 
 step "Signing the update and writing the feed"
 UPDATE_KEY="$(security find-generic-password -s "Sesame update signing key" -a sesame -w)" || stop "No update key. Run swift tools/setup_update_key.swift."
