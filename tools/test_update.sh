@@ -5,6 +5,7 @@
 #
 # Usage: tools/test_update.sh
 # Signs with SIGNING_IDENTITY, default "Apple Development". Leaves its files in build/update-test.
+# OLD_SIGNING_IDENTITY and OLD_SIGNING_KEYCHAIN sign the old copy differently, to test a change of certificate.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -47,7 +48,8 @@ PUBLIC_KEY="$(echo "$KEYS" | sed -n 2p)"
 export BUNDLE_ID PUBLIC_ED_KEY="$PUBLIC_KEY" FEED_URL="http://127.0.0.1:$PORT/appcast.xml" ALLOWS_AUTOMATIC_UPDATES=1
 
 step "Building old 0.1.0 (1) and new 0.2.0 (2)"
-OUTPUT="$ROOT/old" tools/build_release.sh 0.1.0 1 | tail -2
+OUTPUT="$ROOT/old" SIGNING_IDENTITY="${OLD_SIGNING_IDENTITY:-$SIGNING_IDENTITY}" SIGNING_KEYCHAIN="${OLD_SIGNING_KEYCHAIN:-}" \
+    tools/build_release.sh 0.1.0 1 | tail -2
 OUTPUT="$ROOT/new" tools/build_release.sh 0.2.0 2 | tail -2
 cp "$ROOT/new/Sesame-0.2.0.dmg" "$SERVE/"
 

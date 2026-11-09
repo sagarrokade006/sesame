@@ -1,9 +1,8 @@
 name: Release
 
 # Every push to main that changes the app builds a DMG and publishes it as a GitHub release, along with the feed that
-# installed copies check once a day. The version is the project's MARKETING_VERSION (major.minor) plus the commit
-# count, so each release is newer than the last without anyone bumping a number. Change MARKETING_VERSION for a
-# bigger step, such as 1.0 to 1.1.
+# installed copies check once a day. tools/next_version.sh picks the version: 1.0.0, then 1.0.1, 1.0.2, following
+# MARKETING_VERSION's major.minor. The build number is the commit count, which is what installed copies compare.
 on:
   push:
     branches: [main]
@@ -14,6 +13,7 @@ on:
       - 'Sesame.xcodeproj/**'
       - 'tools/build_release.sh'
       - 'tools/make_appcast.py'
+      - 'tools/next_version.sh'
       - '.github/workflows/release.yml'
   workflow_dispatch:
     inputs:
@@ -49,37 +49,26 @@ jobs:
 
       - name: Work out the version
         id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          BASE="$(grep -m1 'MARKETING_VERSION = ' Sesame.xcodeproj/project.pbxproj | sed -E 's/.*= ([0-9.]+);/\1/')"
-          BUILD="$(git rev-list --count HEAD)"
-          VERSION="$BASE.$BUILD"
+          read -r VERSION BUILD < <(tools/next_version.sh)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-          if gh release view "v$VERSION" >/dev/null 2>&1; then
-            echo "v$VERSION is already released."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
           echo "Releasing $VERSION ($BUILD)"
 
       - name: Check signing is set up
-        if: steps.version.outputs.skip != 'true'
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           SIGNING_CERTIFICATE_P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
         run: |
           test -n "$SPARKLE_PRIVATE_KEY" || { echo "::error::Run swift tools/setup_update_key.swift first."; exit 1; }
           test -n "$(plutil -extract SUPublicEDKey raw Config/Info.plist)" || { echo "::error::SUPublicEDKey is empty."; exit 1; }
-          test -n "$SIGNING_CERTIFICATE_P12" || { echo "::error::Run tools/setup_signing_certificate.sh first."; exit 1; }
+          test -n "$SIGNING_CERTIFICATE_P12" || { echo "::error::Run tools/setup_ci_signing.sh first."; exit 1; }
 
       - name: Test unlock logic
-        if: steps.version.outputs.skip != 'true'
         working-directory: Packages/SesameCore
         run: swift test
 
       - name: Load the signing certificate
-        if: steps.version.outputs.skip != 'true'
         id: certificate
         env:
           SIGNING_CERTIFICATE_P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
@@ -94,30 +83,25 @@ jobs:
           security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          # codesign only uses a certificate macOS trusts, and a self-signed one has to be trusted explicitly.
-          /usr/bin/openssl pkcs12 -in "$RUNNER_TEMP/certificate.p12" -nokeys -passin "pass:$SIGNING_CERTIFICATE_PASSWORD" \
-            -out "$RUNNER_TEMP/certificate.pem"
-          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/certificate.pem" \
-            || sudo security add-trusted-cert -d -r trustAsRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/certificate.pem"
-          rm "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/certificate.pem"
-          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/1\)/ {print $2; exit}')"
+          rm "$RUNNER_TEMP/certificate.p12"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep "Apple Development" | grep -m1 -o '[0-9A-F]\{40\}' || true)"
           test -n "$IDENTITY" || { security find-identity -p codesigning "$KEYCHAIN"; echo "::error::No usable signing identity."; exit 1; }
           echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
           echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
 
       - name: Build DMG
-        if: steps.version.outputs.skip != 'true'
         env:
           SIGNING_IDENTITY: ${{ steps.certificate.outputs.identity }}
           SIGNING_KEYCHAIN: ${{ steps.certificate.outputs.keychain }}
         run: |
           tools/build_release.sh "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.build }}"
-          # Every release must carry the same certificate, or macOS treats the update as a different app.
-          codesign -d -r- build/release/derived/Build/Products/Release/Sesame.app 2>&1 | grep -qE 'certificate (leaf|root) = H' \
-            || { echo "::error::The app isn't signed with the certificate."; exit 1; }
+          # Every release must carry an Apple-issued signature from the same team, or macOS treats the update as a
+          # different app and asks for Accessibility, Input Monitoring, and the Keychain all over again.
+          APP=build/release/derived/Build/Products/Release/Sesame.app
+          codesign -d -r- "$APP" 2>&1 | grep -q 'anchor apple generic' || { echo "::error::Not signed by an Apple-issued certificate."; exit 1; }
+          [ "$(codesign -dv "$APP" 2>&1 | sed -n 's/^TeamIdentifier=//p')" = "3P6YJ2SJ4X" ] || { echo "::error::Not signed by team 3P6YJ2SJ4X."; exit 1; }
 
       - name: Sign the update and write the feed
-        if: steps.version.outputs.skip != 'true'
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
@@ -134,7 +118,7 @@ jobs:
           python3 tools/make_appcast.py "$VERSION" "${{ steps.version.outputs.build }}" "$SIGNATURE" "$LENGTH" build/release/appcast.xml
 
       - name: Keep the DMG from a dry run
-        if: steps.version.outputs.skip != 'true' && github.event_name == 'workflow_dispatch' && !inputs.publish
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@v4
         with:
           name: Sesame-${{ steps.version.outputs.version }}
@@ -143,7 +127,7 @@ jobs:
             build/release/appcast.xml
 
       - name: Publish release
-        if: steps.version.outputs.skip != 'true' && (github.event_name != 'workflow_dispatch' || inputs.publish)
+        if: (github.event_name != 'workflow_dispatch' || inputs.publish)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

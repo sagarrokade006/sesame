@@ -25,8 +25,8 @@ next to About. Click **Update** to see what's new and install it; Sesame restart
 
 ![An update waiting on Overview](docs/update.png)
 
-Your faces, password, settings, and macOS permissions carry over, because every release is signed with the same
-certificate. Every update is also checked against Sesame's own update key before it's installed, so only releases
+Your faces, password, settings, and macOS permissions carry over, because every release is signed by the same Apple
+team. Every update is also checked against Sesame's own update key before it's installed, so only releases
 from this repository can replace it.
 
 ## A tour
@@ -92,34 +92,43 @@ notifies, downloads, verifies, and installs it.
 
 ## Releasing
 
-Every push to `main` that changes the app publishes a release on its own. GitHub Actions runs the tests, builds and
-signs the DMG, signs the update, and publishes the DMG with the update feed (`appcast.xml`) that installed copies read.
+Releases are numbered `1.0.0`, `1.0.1`, `1.0.2`, and so on: each takes the next patch number in the series set by
+`MARKETING_VERSION` in the Xcode project. Set it to `1.1.0` to start the next series. The build number is the commit
+count, which is what installed copies compare to decide that a release is newer.
 
-The version is `MARKETING_VERSION` from the Xcode project (such as `1.0`) plus the number of commits, so releases go
-`1.0.41`, `1.0.42`, and so on, always newer than the last. Change `MARKETING_VERSION` for a bigger step. Pushes that
-only touch the README or docs don't release. To release by hand, or to test the pipeline without publishing, run the
-**Release** workflow from the Actions tab and switch off **Publish**.
+### From your Mac
 
-### Releasing from a Mac
+```bash
+tools/release_local.sh
+```
 
-When GitHub Actions isn't available, `tools/release_local.sh` does the same steps on your Mac and publishes with the
-GitHub CLI. Run it on `main` with everything pushed. The first time, it asks you to trust the signing certificate for
-code signing, with one command it prints.
+Run it on `main` with everything pushed. It tests, builds, signs, signs the update, writes the update feed
+(`appcast.xml`), and publishes the DMG and feed to GitHub Releases.
+
+### From GitHub Actions
+
+Every push to `main` that changes the app runs the same steps on GitHub. Pushes that only touch the README or docs
+don't release. Run the **Release** workflow from the Actions tab by hand and switch off **Publish** to test the
+pipeline without releasing.
+
+### Signing, without a paid developer account
+
+Releases are signed with the free **Apple Development** certificate Xcode creates for your Apple ID (Xcode › Settings
+› Accounts). Because Apple issued it, macOS recognizes every release as the same app, so Accessibility, Input
+Monitoring, Camera, and the Keychain item holding Sesame's key all carry over between updates. Builds from Xcode use
+the same certificate and store their key in the same place, so you can switch between a build from Xcode and a
+release without losing your data. Both release paths refuse to publish a build signed any other way.
+
+Without notarization, which needs a paid account, macOS asks people to click **Open Anyway** the first time they open
+Sesame. Updates install without that step.
 
 ### One-time setup
 
-Sesame is open source and released without an Apple Developer account, so two keys stand in for one. Run both from
-the repo root; each stores its secret in your login Keychain and in this repository's Actions secrets, and refuses to
-replace an existing one.
-
-1. `swift tools/setup_update_key.swift` creates the update key and writes its public half to `Config/Info.plist`.
-   Commit that change. Without the private half, no one can publish an update that installed copies will accept.
-2. `tools/setup_signing_certificate.sh` creates the self-signed certificate every release is signed with. macOS
-   remembers Camera, Accessibility, and Input Monitoring, and the Keychain keeps Sesame's key, only while the signature
-   stays the same from version to version. Without it, every update would ask for all permissions again.
-
-Keep the Keychain backups. A lost update key means installed copies can't update; a lost certificate means everyone
-grants permissions once more.
+1. `swift tools/setup_update_key.swift` creates the update key, stores the private half in your login Keychain and
+   the repo's Actions secrets, and writes the public half to `Config/Info.plist`. Commit that change. Installed copies
+   only accept updates signed with this key, so keep the Keychain backup.
+2. For GitHub Actions only: export your Apple Development certificate from Keychain Access as a `.p12`, then run
+   `tools/setup_ci_signing.sh path/to/certificate.p12`.
 
 If you later get a Developer ID, `tools/build_release.sh` also supports `DEVELOPER_ID_IDENTITY` and notarization, which
 removes the **Open Anyway** step.

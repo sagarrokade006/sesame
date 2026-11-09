@@ -6,10 +6,10 @@
 # Signing, in order of preference:
 #   DEVELOPER_ID_IDENTITY   An Apple Developer ID. Adds the hardened runtime, and with APPLE_ID, APPLE_APP_PASSWORD and
 #                           APPLE_TEAM_ID also notarizes, so Gatekeeper opens it without a warning.
-#   SIGNING_IDENTITY        Any other certificate, such as the self-signed one from tools/setup_signing_certificate.sh,
-#                           given by name or SHA-1. Every release must use the same one: macOS keeps Camera,
-#                           Accessibility, and Input Monitoring, and the Keychain keeps Sesame's key, only while the
-#                           signature stays the same.
+#   SIGNING_IDENTITY        Any other certificate, given by name or SHA-1, normally the free Apple Development one
+#                           (see tools/release_local.sh). Every release must come from the same Apple team: macOS keeps
+#                           Accessibility and Input Monitoring, and the Keychain keeps Sesame's key, only for an
+#                           Apple-issued signature that stays the same from version to version.
 #   neither                 Ad-hoc. Fine for trying a build, but each one looks like a different app to macOS.
 #
 # For testing updates locally (tools/test_update.sh):
