@@ -55,7 +55,8 @@ final class UnlockController {
             guard !MacLockScreen.isLocked else { return }
             counter.reset()
             endScan()
-            badge.hide()
+            // After a face unlock, `confirmEntry` keeps the checkmark up briefly instead.
+            if !isConfirmingEntry { badge.hide() }
         }
     }
 
@@ -207,7 +208,7 @@ final class UnlockController {
         } else {
             vault.update { $0.passwordHealth.recordUnlock(at: Date()) }
             log(.unlocked, note: name)
-            badge.hide()
+            badge.hide(after: .seconds(1.2))
         }
     }
 }

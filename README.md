@@ -39,4 +39,4 @@ cd Packages/SesameCore && swift test
 The face recognition model is [SFace](https://huggingface.co/opencv/face_recognition_sface) from OpenCV, under the
 Apache License 2.0. Its license is in `App/Models/SFace-LICENSE.txt`, and `tools/convert_model.py` converts it for Core ML.
 
-The lock-screen badge uses private macOS window server APIs, which may change in any macOS update.
+The lock-screen animation uses private macOS window server APIs, which may change in any macOS update.

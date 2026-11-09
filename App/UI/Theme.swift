@@ -55,24 +55,145 @@ struct ScanMark: View {
                     }
                 }
             case .success:
-                filled(Theme.mint, symbol: "checkmark", symbolColor: .black)
+                ResolvedGem(style: .success)
             case .failure:
-                filled(Theme.coral, symbol: "xmark", symbolColor: .white)
+                ResolvedGem(style: .failure)
             }
         }
         .padding(2)
         .aspectRatio(1, contentMode: .fit)
     }
+}
 
-    private func filled(_ color: Color, symbol: String, symbolColor: Color) -> some View {
+/// One of the six triangles running from the hexagon's center to two neighboring corners.
+private struct HexagonFacet: Shape {
+    let index: Int
+
+    func path(in rect: CGRect) -> Path {
+        let radius = min(rect.width, rect.height) / 2
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        func corner(_ number: Int) -> CGPoint {
+            let angle = Double(number) * .pi / 3 - .pi / 2
+            return CGPoint(x: center.x + radius * cos(angle), y: center.y + radius * sin(angle))
+        }
+        var path = Path()
+        path.move(to: center)
+        path.addLine(to: corner(index))
+        path.addLine(to: corner(index + 1))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct CheckStroke: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.29, y: rect.minY + rect.height * 0.52))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.44, y: rect.minY + rect.height * 0.67))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.72, y: rect.minY + rect.height * 0.35))
+        return path
+    }
+}
+
+private struct CrossStroke: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.35, y: rect.minY + rect.height * 0.35))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.65, y: rect.minY + rect.height * 0.65))
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.65, y: rect.minY + rect.height * 0.35))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.35, y: rect.minY + rect.height * 0.65))
+        return path
+    }
+}
+
+/// A cut-gem hexagon that lands with a pop, then draws its symbol in. Success ripples outward; failure shakes.
+private struct ResolvedGem: View {
+    enum Style {
+        case success
+        case failure
+
+        /// Lightest at the top left, as if lit from above.
+        var facets: [Color] {
+            switch self {
+            case .success:
+                return [0x8DEBD0, 0x5FDDB8, 0x2EC49A, 0x1FA582, 0x28B38C, 0x56D6B0].map(Self.color)
+            case .failure:
+                return [0xFF9C8C, 0xFB7766, 0xF0503F, 0xC93A2D, 0xDD4638, 0xF56F5E].map(Self.color)
+            }
+        }
+
+        var symbolColor: Color {
+            self == .success ? Color(red: 0.03, green: 0.20, blue: 0.15) : .white
+        }
+
+        private static func color(_ hex: Int) -> Color {
+            Color(
+                red: Double((hex >> 16) & 0xFF) / 255,
+                green: Double((hex >> 8) & 0xFF) / 255,
+                blue: Double(hex & 0xFF) / 255
+            )
+        }
+    }
+
+    let style: Style
+
+    @State private var hasLanded = false
+    @State private var symbolProgress = 0.0
+    @State private var rippleProgress = 0.0
+    @State private var shakeOffset = 0.0
+
+    var body: some View {
         GeometryReader { proxy in
+            let width = proxy.size.width
+            let symbolStyle = StrokeStyle(lineWidth: width * 0.1, lineCap: .round, lineJoin: .round)
+
             ZStack {
-                Hexagon().fill(color)
-                Hexagon().stroke(color, style: outline)
-                Image(systemName: symbol)
-                    .font(.system(size: proxy.size.width * 0.36, weight: .heavy))
-                    .foregroundStyle(symbolColor)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if style == .success {
+                    Hexagon()
+                        .stroke(style.facets[2], lineWidth: max(1.5, width * 0.035))
+                        .scaleEffect(1 + rippleProgress * 0.42)
+                        .opacity((1 - rippleProgress) * 0.8)
+                }
+
+                ZStack {
+                    ForEach(0..<6, id: \.self) { index in
+                        HexagonFacet(index: index).fill(style.facets[index])
+                    }
+                    Hexagon()
+                        .stroke(.white.opacity(0.28), lineWidth: max(0.75, width * 0.012))
+                        .scaleEffect(0.78)
+
+                    Group {
+                        if style == .success {
+                            CheckStroke().trim(from: 0, to: symbolProgress).stroke(style.symbolColor, style: symbolStyle)
+                        } else {
+                            CrossStroke().trim(from: 0, to: symbolProgress).stroke(style.symbolColor, style: symbolStyle)
+                        }
+                    }
+                }
+                .scaleEffect(hasLanded ? 1 : 0.55)
+                .opacity(hasLanded ? 1 : 0)
+                .offset(x: shakeOffset * width)
+                .shadow(color: style.facets[2].opacity(0.45), radius: width * 0.12)
+            }
+            .frame(width: width, height: proxy.size.height)
+        }
+        .onAppear(perform: play)
+    }
+
+    private func play() {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.6)) { hasLanded = true }
+        withAnimation(.easeOut(duration: 0.28).delay(0.14)) { symbolProgress = 1 }
+        switch style {
+        case .success:
+            withAnimation(.easeOut(duration: 0.7).delay(0.1)) { rippleProgress = 1 }
+        case .failure:
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                for offset in [-0.07, 0.06, -0.04, 0.025, 0.0] {
+                    withAnimation(.easeInOut(duration: 0.06)) { shakeOffset = offset }
+                    try? await Task.sleep(for: .milliseconds(60))
+                }
             }
         }
     }
