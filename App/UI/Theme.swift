@@ -2,15 +2,21 @@ import SwiftUI
 
 enum Theme {
     static let ink = Color(red: 0.07, green: 0.10, blue: 0.09)
-    static let page = Color(red: 0.09, green: 0.125, blue: 0.11)
-    static let rail = Color(red: 0.07, green: 0.10, blue: 0.09)
-    static let card = Color.white.opacity(0.06)
-    static let line = Color.white.opacity(0.09)
-    static let primary = Color.white.opacity(0.92)
-    static let secondary = Color.white.opacity(0.55)
+    static let page = Color(red: 0.075, green: 0.10, blue: 0.092)
+    static let rail = Color(red: 0.055, green: 0.075, blue: 0.07)
+    static let card = Color.white.opacity(0.045)
+    static let raised = Color.white.opacity(0.075)
+    static let line = Color.white.opacity(0.08)
+    static let primary = Color.white.opacity(0.93)
+    static let secondary = Color.white.opacity(0.56)
+    static let tertiary = Color.white.opacity(0.34)
     static let mint = Color(red: 0.18, green: 0.77, blue: 0.60)
     static let coral = Color(red: 0.94, green: 0.36, blue: 0.29)
     static let amber = Color(red: 0.96, green: 0.65, blue: 0.26)
+    static let sky = Color(red: 0.36, green: 0.62, blue: 0.98)
+    static let violet = Color(red: 0.62, green: 0.50, blue: 0.98)
+
+    static let radius: CGFloat = 16
 }
 
 struct Hexagon: Shape {
@@ -196,53 +202,5 @@ private struct ResolvedGem: View {
                 }
             }
         }
-    }
-}
-
-struct Panel<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(spacing: 0) { content }
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.line))
-    }
-}
-
-struct PanelRow<Trailing: View>: View {
-    let title: String
-    var detail: String?
-    @ViewBuilder let trailing: Trailing
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13)).foregroundStyle(Theme.primary)
-                if let detail {
-                    Text(detail).font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                }
-            }
-            Spacer(minLength: 8)
-            trailing
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-}
-
-struct PanelDivider: View {
-    var body: some View {
-        Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, 14)
-    }
-}
-
-struct SectionLabel: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Theme.secondary)
-            .padding(.leading, 4)
     }
 }

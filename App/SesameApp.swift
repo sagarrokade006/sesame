@@ -9,6 +9,12 @@ struct SesameApp: App {
     @State private var model = AppModel()
 
     init() {
+        #if DEBUG
+        if let folder = Snapshot.folder {
+            DispatchQueue.main.async { Snapshot.run(in: folder) }
+            return
+        }
+        #endif
         // Two copies would both watch the camera, type the password, and overwrite each other's saved data.
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.sagarrokade.sesame")
             .filter { $0 != .current }
@@ -21,7 +27,7 @@ struct SesameApp: App {
     var body: some Scene {
         Window("Sesame", id: "main") {
             MainView(model: model)
-                .frame(width: 760, height: 600)
+                .frame(width: MainView.size.width, height: MainView.size.height)
                 .preferredColorScheme(.dark)
         }
         .windowResizability(.contentSize)
@@ -55,7 +61,18 @@ final class AppModel {
     }
 
     /// macOS doesn't announce permission changes, so the open window calls this regularly.
+    #if DEBUG
+    /// Snapshot runs don't have the app's permissions, so they say what the picture should show.
+    func pretendPermissions(granted: Bool) {
+        cameraAccess = granted ? .authorized : .notDetermined
+        canType = granted
+    }
+    #endif
+
     func refreshPermissions() {
+        #if DEBUG
+        if Snapshot.folder != nil { return }
+        #endif
         let camera = AVCaptureDevice.authorizationStatus(for: .video)
         let typing = MacLockScreen.canType
         let gainedPermission = (camera == .authorized && cameraAccess != .authorized) || (typing && !canType)

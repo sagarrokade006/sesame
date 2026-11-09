@@ -195,6 +195,16 @@ final class Vault {
         persist()
     }
 
+    #if DEBUG
+    /// Opens with made-up contents and no key, so nothing is ever written. For UI snapshots only.
+    func openForSnapshot(_ sample: VaultContents) {
+        contents = sample
+        isOpen = true
+        hasRecentApproval = true
+        trust = TrustWindow(grantedAt: Date(), hours: sample.settings.trustHours)
+    }
+    #endif
+
     func close() {
         key = nil
         contents = VaultContents()

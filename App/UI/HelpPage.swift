@@ -29,22 +29,53 @@ struct HelpPage: View {
         Topic(question: "It doesn't recognize me", answer: "Face the screen in good light with your eyes open. If your look has changed, add another face on the Faces page."),
     ]
 
-    var body: some View {
-        section("Getting started", setup)
-        section("Unlocking", unlocking)
-        section("Troubleshooting", trouble)
+    @State private var search = ""
 
-        Text("Sesame is a convenience tool and isn't as secure as Face ID or Touch ID. Someone with a very convincing video or mask may be able to fool it.")
-            .font(.system(size: 12))
-            .foregroundStyle(Theme.secondary)
+    private func matching(_ topics: [Topic]) -> [Topic] {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return topics }
+        return topics.filter { $0.question.localizedCaseInsensitiveContains(query) || $0.answer.localizedCaseInsensitiveContains(query) }
     }
 
-    private func section(_ title: String, _ topics: [Topic]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: title)
-            Panel {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.tertiary)
+            TextField("Search help", text: $search).textFieldStyle(.plain).font(.system(size: 13))
+            if !search.isEmpty {
+                Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.tertiary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.line))
+
+        section("Getting started", symbol: "sparkles", tint: Theme.mint, matching(setup))
+        section("Unlocking", symbol: "lock.open.fill", tint: Theme.sky, matching(unlocking))
+        section("Troubleshooting", symbol: "wrench.and.screwdriver.fill", tint: Theme.amber, matching(trouble))
+
+        if [setup, unlocking, trouble].allSatisfy({ matching($0).isEmpty }) {
+            Text("No answers match \u{201C}\(search)\u{201D}.").font(.system(size: 12.5)).foregroundStyle(Theme.secondary).padding(.leading, 4)
+        }
+
+        Banner(symbol: "info.circle.fill", tint: Theme.secondary, title: "A convenience, not Face ID",
+               detail: "Someone with a very convincing video or mask may be able to fool a webcam.")
+            .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private func section(_ title: String, symbol: String, tint: Color, _ topics: [Topic]) -> some View {
+        if !topics.isEmpty {
+            HStack(spacing: 8) {
+                IconBadge(symbol: symbol, tint: tint, size: 22)
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.primary)
+            }
+            .padding(.top, 8)
+            Card {
                 ForEach(Array(topics.enumerated()), id: \.element.id) { index, topic in
-                    if index > 0 { PanelDivider() }
+                    if index > 0 { RowDivider(inset: 16) }
                     TopicRow(question: topic.question, answer: topic.answer)
                 }
             }
@@ -64,7 +95,7 @@ private struct TopicRow: View {
             } label: {
                 HStack {
                     Text(question)
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.primary)
                         .multilineTextAlignment(.leading)
                     Spacer(minLength: 8)
@@ -84,7 +115,7 @@ private struct TopicRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }

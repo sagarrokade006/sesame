@@ -22,7 +22,21 @@ final class Surroundings: NSObject, CLLocationManagerDelegate {
         Task { @MainActor in NotificationCenter.default.post(name: Self.accessChanged, object: nil) }
     }
 
+    #if DEBUG
+    /// Stands in for the real Wi-Fi and Bluetooth in UI snapshots, which run without privacy permissions.
+    struct Sample {
+        var network: String?
+        var devices: [UnlockRules.Device]
+        var connected: Set<String>
+    }
+
+    var sample: Sample?
+    #endif
+
     var canReadNetwork: Bool {
+        #if DEBUG
+        if sample != nil { return true }
+        #endif
         let status = location.authorizationStatus
         return status == .authorizedAlways || status == .authorized
     }
@@ -31,10 +45,18 @@ final class Surroundings: NSObject, CLLocationManagerDelegate {
         location.requestWhenInUseAuthorization()
     }
 
-    var network: String? { CWWiFiClient.shared().interface()?.ssid() }
+    var network: String? {
+        #if DEBUG
+        if let sample { return sample.network }
+        #endif
+        return CWWiFiClient.shared().interface()?.ssid()
+    }
 
     var pairedDevices: [UnlockRules.Device] {
-        (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []).compactMap { device in
+        #if DEBUG
+        if let sample { return sample.devices }
+        #endif
+        return (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []).compactMap { device in
             guard let address = device.addressString else { return nil }
             return UnlockRules.Device(name: device.name ?? address, address: address)
         }
@@ -42,7 +64,10 @@ final class Surroundings: NSObject, CLLocationManagerDelegate {
     }
 
     func isConnected(_ device: UnlockRules.Device) -> Bool {
-        IOBluetoothDevice(addressString: device.address)?.isConnected() ?? false
+        #if DEBUG
+        if let sample { return sample.connected.contains(device.address) }
+        #endif
+        return IOBluetoothDevice(addressString: device.address)?.isConnected() ?? false
     }
 
     /// Only looks up what the rules actually use.

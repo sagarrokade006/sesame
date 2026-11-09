@@ -8,6 +8,7 @@ struct FacesPage: View {
     @State private var enrollment: Enrollment?
 
     private var vault: Vault { model.vault }
+    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
     var body: some View {
         if let enrollment {
@@ -18,41 +19,73 @@ struct FacesPage: View {
                 enrollment.stop()
                 self.enrollment = nil
             }
+        } else if vault.contents.profiles.isEmpty {
+            emptyState
         } else {
-            Panel {
-                if vault.contents.profiles.isEmpty {
-                    PanelRow(title: "No faces yet") { EmptyView() }
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(vault.contents.profiles) { profile in
+                    FaceCard(profile: profile, setActive: { setActive(profile, $0) }, remove: { remove(profile) })
                 }
-                ForEach(Array(vault.contents.profiles.enumerated()), id: \.element.id) { index, profile in
-                    if index > 0 { PanelDivider() }
-                    PanelRow(title: profile.name, detail: "\(profile.vectors.count) samples") {
-                        Toggle("", isOn: Binding(
-                            get: { profile.isActive },
-                            set: { isOn in
-                                vault.update { contents in
-                                    contents.profiles.indices
-                                        .filter { contents.profiles[$0].id == profile.id }
-                                        .forEach { contents.profiles[$0].isActive = isOn }
-                                }
-                            }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .tint(Theme.mint)
-                        Button(role: .destructive) {
-                            vault.update { $0.profiles.removeAll { $0.id == profile.id } }
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                addCard
             }
-
-            Button("Add a face") { startEnrollment() }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.mint)
+            Text("Add another face if you often wear glasses or a hat. Switch a face off to keep it without using it.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.tertiary)
+                .padding(.leading, 4)
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Hexagon().fill(Theme.mint.opacity(0.1))
+                Hexagon().stroke(Theme.mint.opacity(0.45), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                Image(systemName: "person.crop.square.fill").font(.system(size: 28)).foregroundStyle(Theme.mint)
+            }
+            .frame(width: 84, height: 84)
+            VStack(spacing: 4) {
+                Text("Add your face").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.primary)
+                Text("Center your face, hold still, then move your head in a slow circle. It takes about 20 seconds.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+            }
+            PrimaryButton(title: "Scan my face", symbol: "camera.viewfinder") { startEnrollment() }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 44)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
+    }
+
+    private var addCard: some View {
+        Button { startEnrollment() } label: {
+            VStack(spacing: 8) {
+                Image(systemName: "plus").font(.system(size: 20, weight: .semibold)).foregroundStyle(Theme.mint)
+                Text("Add a face").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.primary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 132)
+            .background(Theme.mint.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
+                    .strokeBorder(Theme.mint.opacity(0.4), style: StrokeStyle(lineWidth: 1.2, dash: [6, 5]))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func setActive(_ profile: FaceProfile, _ isOn: Bool) {
+        vault.update { contents in
+            contents.profiles.indices
+                .filter { contents.profiles[$0].id == profile.id }
+                .forEach { contents.profiles[$0].isActive = isOn }
+        }
+    }
+
+    private func remove(_ profile: FaceProfile) {
+        vault.update { $0.profiles.removeAll { $0.id == profile.id } }
     }
 
     private func startEnrollment() {
@@ -64,6 +97,65 @@ struct FacesPage: View {
             let session = Enrollment()
             session.start()
             enrollment = session
+        }
+    }
+}
+
+private struct FaceCard: View {
+    let profile: FaceProfile
+    let setActive: (Bool) -> Void
+    let remove: () -> Void
+    @State private var confirmingRemove = false
+
+    private var initials: String {
+        let letters = profile.name.split(separator: " ").prefix(2).compactMap(\.first)
+        return letters.isEmpty ? "?" : String(letters).uppercased()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                ZStack {
+                    Hexagon().fill(profile.isActive ? Theme.mint.opacity(0.2) : Color.white.opacity(0.06))
+                    Hexagon().stroke(profile.isActive ? Theme.mint : Theme.tertiary, lineWidth: 1.5)
+                    Text(initials)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(profile.isActive ? Theme.mint : Theme.secondary)
+                }
+                .frame(width: 44, height: 44)
+                Spacer()
+                Menu {
+                    Button("Remove \(profile.name)…", role: .destructive) { confirmingRemove = true }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .foregroundStyle(Theme.secondary)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(profile.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.primary).lineLimit(1)
+                Text("\(profile.vectors.count) samples · Added \(profile.createdAt.formatted(.dateTime.month(.abbreviated).day()))")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.secondary)
+            }
+            HStack {
+                Text(profile.isActive ? "Used for unlock" : "Switched off")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(profile.isActive ? Theme.mint : Theme.tertiary)
+                Spacer()
+                Switch(isOn: Binding(get: { profile.isActive }, set: { setActive($0) }))
+            }
+        }
+        .padding(16)
+        .frame(minHeight: 132)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
+        .confirmationDialog("Remove \(profile.name)?", isPresented: $confirmingRemove) {
+            Button("Remove", role: .destructive, action: remove)
+        } message: {
+            Text("Sesame will stop recognizing this face. You can scan it again later.")
         }
     }
 }
@@ -119,7 +211,7 @@ private struct EnrollmentPanel: View {
     private var isComplete: Bool { enrollment.scan.stage == .complete }
 
     var body: some View {
-        Panel {
+        Card {
             VStack(spacing: 16) {
                 FaceScannerDial(scan: enrollment.scan) {
                     CameraPreview(session: enrollment.camera.session)
@@ -148,7 +240,8 @@ private struct EnrollmentPanel: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(20)
+            .frame(maxWidth: .infinity)
         }
     }
 }
