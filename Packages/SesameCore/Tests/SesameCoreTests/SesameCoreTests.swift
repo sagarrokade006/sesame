@@ -226,12 +226,48 @@ private struct Run {
         #expect(!run.unlocked)
     }
 
+    /// A real head turning: the nose moves against the eyes as the head turns.
+    private func turn(_ run: inout Run, to target: Double) {
+        for step in 0...8 {
+            let yaw = target * Double(step) / 8
+            run.frame(owner, yaw: yaw, shift: yaw * 0.6)
+        }
+    }
+
     @Test func challengePlusProofUnlocks() {
         var run = Run(challenge: TurnChallenge(direction: .left))
         run.blink(owner)
-        run.frame(.doubtful, yaw: 0.3)
+        turn(&run, to: 0.32)
         run.frames(owner, count: 3)
         #expect(run.unlocked)
+    }
+
+    @Test func twoTurnsUnlock() {
+        var run = Run(challenge: TurnChallenge(directions: [.right, .left]))
+        run.blink(owner)
+        turn(&run, to: -0.32)
+        turn(&run, to: 0)
+        turn(&run, to: 0.32)
+        run.frames(owner, count: 3)
+        #expect(run.unlocked)
+    }
+
+    /// A photo or phone tilted to fake a turn: the angle changes but the nose doesn't move against the eyes.
+    @Test func aTiltedFlatPictureCanNotPassTheTurn() {
+        var run = Run(challenge: TurnChallenge(direction: .left))
+        run.blink(owner)
+        for step in 0...8 { run.frame(owner, yaw: 0.32 * Double(step) / 8, shift: 0.01) }
+        run.frames(owner, count: 20)
+        #expect(!run.unlocked)
+    }
+
+    /// A video of the owner turning the other way fails the scan instead of waiting for another chance.
+    @Test func aWrongTurnEndsTheScan() {
+        var run = Run(challenge: TurnChallenge(direction: .left))
+        run.blink(owner)
+        turn(&run, to: -0.32)
+        #expect(run.outcomes.contains(.wrongTurn))
+        #expect(!run.unlocked)
     }
 
     @Test func aStrangerRestartsTheChallenge() {
@@ -277,11 +313,51 @@ private struct Run {
 }
 
 @Suite struct ChallengeTests {
-    @Test func wrongDirectionDoesNotCount() {
+    @Test func wrongDirectionFails() {
         var challenge = TurnChallenge(direction: .right)
         challenge.observe(yaw: 0)
         challenge.observe(yaw: 0.4)
         #expect(!challenge.isComplete)
+        #expect(challenge.turnedWrongWay)
+    }
+
+    @Test func aSmallWobbleTheOtherWayIsFine() {
+        var challenge = TurnChallenge(direction: .right)
+        challenge.observe(yaw: 0)
+        challenge.observe(yaw: 0.15)
+        challenge.observe(yaw: -0.3)
+        #expect(challenge.isComplete)
+        #expect(!challenge.turnedWrongWay)
+    }
+
+    @Test func turnsComeInOrderWithACenterBetween() {
+        var challenge = TurnChallenge(directions: [.left, .right])
+        challenge.observe(yaw: 0)
+        challenge.observe(yaw: 0.3)
+        #expect(challenge.step == 1)
+        #expect(challenge.direction == .right)
+        // Still turned left from the first step: neither progress nor a wrong turn until back at center.
+        challenge.observe(yaw: 0.3)
+        #expect(!challenge.turnedWrongWay)
+        challenge.observe(yaw: 0)
+        challenge.observe(yaw: -0.3)
+        #expect(challenge.isComplete)
+    }
+
+    @Test func aSecondTurnTheSameWayAsTheFirstIsWrongWhenRightWasAsked() {
+        var challenge = TurnChallenge(directions: [.left, .right])
+        challenge.observe(yaw: 0)
+        challenge.observe(yaw: 0.3)
+        challenge.observe(yaw: 0)
+        challenge.observe(yaw: 0.3)
+        #expect(challenge.turnedWrongWay)
+    }
+
+    @Test func randomSequencesUseBothDirections() {
+        var generator = SystemRandomNumberGenerator()
+        let sequences = (0..<200).map { _ in TurnChallenge.random(steps: 2, using: &generator).directions }
+        #expect(sequences.allSatisfy { $0.count == 2 })
+        #expect(Set(sequences.map { $0.map(\.rawValue).joined() }).count == 4)
     }
 
     @Test func alreadyTurnedProvesNothing() {

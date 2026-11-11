@@ -60,6 +60,46 @@ import Testing
     }
 }
 
+@Suite struct EyeAttentionTests {
+    private func reading(left: Double, right: Double, yaw: Double = 0) -> FaceReading {
+        FaceReading(time: 0, yaw: yaw, pitch: 0, leftEyeOpenness: left, rightEyeOpenness: right)
+    }
+
+    @Test func bothEyesOpenIsAttentive() {
+        #expect(reading(left: 0.35, right: 0.37).isAttentive())
+    }
+
+    /// A closed eye measured 0.19 in real scans, above the fixed minimum, while the open one read 0.36.
+    @Test func oneClosedEyeIsNotAttentive() {
+        #expect(!reading(left: 0.19, right: 0.36).isAttentive())
+        #expect(!reading(left: 0.36, right: 0.19).isAttentive())
+    }
+
+    @Test func bothClosedIsNotAttentive() {
+        #expect(!reading(left: 0.12, right: 0.13).isAttentive())
+    }
+
+    /// Turning the head makes one eye look a little smaller; that still counts.
+    @Test func aSlightTurnKeepsBothEyesCounted() {
+        #expect(reading(left: 0.35, right: 0.45, yaw: 0.3).isAttentive())
+    }
+
+    @Test func aWinkCanNotUnlock() {
+        var attempt = UnlockAttempt(startedAt: 0)
+        var outcomes: [UnlockAttempt.Outcome] = []
+        // A real blink first, as proof of life, then holding one eye shut.
+        for (index, eyes) in [0.35, 0.35, 0.1, 0.1, 0.35, 0.35].enumerated() {
+            let frame = FaceReading(time: Double(index) * 0.05, yaw: 0, pitch: 0, leftEyeOpenness: 0.19, rightEyeOpenness: eyes)
+            outcomes.append(attempt.observe(frame, verdict: .owner(name: "Alex")))
+        }
+        for index in 6..<40 {
+            let frame = FaceReading(time: Double(index) * 0.05, yaw: 0, pitch: 0, leftEyeOpenness: 0.19, rightEyeOpenness: 0.36)
+            outcomes.append(attempt.observe(frame, verdict: .owner(name: "Alex")))
+        }
+        #expect(!outcomes.contains(.unlock(name: "Alex")))
+    }
+}
+
 @Suite struct FaceStatsTests {
     @Test func countsUnlocks() {
         var profile = FaceProfile(name: "Alex", vectors: [], modelVersion: "v1", createdAt: Date())

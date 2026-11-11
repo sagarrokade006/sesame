@@ -14,6 +14,7 @@ final class RecognitionTest {
         case tooDark
         case stranger
         case spoof
+        case wrongTurn
         case cameraSilent
     }
 
@@ -24,10 +25,13 @@ final class RecognitionTest {
     private(set) var score: Float?
     private(set) var isAttentive = false
     private(set) var isWaitingForProof = false
+    /// The current head-turn step, when the check is on.
+    private(set) var challenge: TurnChallenge?
 
     let requiresAttention: Bool
     let requiresBlink: Bool
     let unlockScore: Float
+    let usesChallenge: Bool
 
     @ObservationIgnored let camera = CameraFeed()
     @ObservationIgnored private let reader = FaceReader()
@@ -46,6 +50,7 @@ final class RecognitionTest {
         unlockScore = contents.settings.matchRule.unlockScore
         requiresAttention = contents.settings.requiresAttention
         requiresBlink = contents.settings.requiresBlink
+        usesChallenge = contents.settings.usesTurnChallenge
         var rules = UnlockAttempt.Rules()
         rules.requiresAttention = contents.settings.requiresAttention
         rules.requiresBlink = contents.settings.requiresBlink
@@ -65,7 +70,9 @@ final class RecognitionTest {
         sawFrame = false
         darkness = DarknessJudge()
         startedAt = ProcessInfo.processInfo.systemUptime
-        attempt = UnlockAttempt(rules: rules, startedAt: startedAt)
+        var generator = SystemRandomNumberGenerator()
+        attempt = UnlockAttempt(rules: rules, challenge: usesChallenge ? .random(steps: 2, using: &generator) : nil, startedAt: startedAt)
+        challenge = attempt.challenge
 
         let reader = self.reader
         camera.start { [weak self] pixels, time in
@@ -114,12 +121,14 @@ final class RecognitionTest {
             isAttentive = false
         }
         isWaitingForProof = attempt.isWaitingForProof
+        challenge = attempt.challenge
 
         switch outcome {
         case .keepWatching: break
         case .unlock(let name): finish(.passed(name: name, seconds: time - startedAt))
         case .stranger: finish(.stranger)
         case .spoof: finish(.spoof)
+        case .wrongTurn: finish(.wrongTurn)
         case .expired: finish(attempt.sawOwner ? .noProof : (darkness.isTooDark ? .tooDark : .noFace))
         }
     }
@@ -132,6 +141,10 @@ final class RecognitionTest {
         score = 0.86
         isAttentive = true
         isWaitingForProof = true
+        var steps = TurnChallenge(directions: [.left, .right])
+        steps.observe(yaw: 0)
+        steps.observe(yaw: 0.3)
+        challenge = steps
     }
     #endif
 }
@@ -155,7 +168,12 @@ struct RecognitionTestPanel: View {
                         check("Face found", detail: test.faceVisible ? nil : "Look at the camera.", isDone: test.faceVisible)
                         check(matchTitle, detail: matchDetail, isDone: test.matchedName != nil)
                         if test.requiresAttention {
-                            check("Eyes open, facing the screen", detail: nil, isDone: test.isAttentive)
+                            check("Both eyes open, facing the screen",
+                                  detail: test.faceVisible && !test.isAttentive ? "Open both eyes and look at the screen." : nil,
+                                  isDone: test.isAttentive)
+                        }
+                        if let challenge = test.challenge {
+                            check(turnTitle(challenge), detail: turnDetail(challenge), isDone: challenge.isComplete)
                         }
                         check(test.requiresBlink ? "Blinked" : "Blinked or moved", detail: proofDetail, isDone: isPassed)
                     }
@@ -179,6 +197,16 @@ struct RecognitionTestPanel: View {
             }
             .padding(20)
         }
+    }
+
+    private func turnTitle(_ challenge: TurnChallenge) -> String {
+        if challenge.isComplete { return "Turned both ways asked" }
+        return "Turn \(challenge.direction == .left ? "left" : "right") (\(challenge.step + 1) of \(challenge.stepCount))"
+    }
+
+    private func turnDetail(_ challenge: TurnChallenge) -> String? {
+        guard !challenge.isComplete, test.result == nil else { return nil }
+        return challenge.step == 0 ? "Slowly, then look back at the screen." : "Look back at the screen first, then turn."
     }
 
     private var isPassed: Bool {
@@ -229,7 +257,7 @@ struct RecognitionTestPanel: View {
         case .passed: return "checkmark.circle.fill"
         case .tooDark: return "moon.fill"
         case .cameraSilent: return "video.slash.fill"
-        case .spoof: return "exclamationmark.shield.fill"
+        case .spoof, .wrongTurn: return "exclamationmark.shield.fill"
         case .noProof, .noFace, .stranger: return "exclamationmark.circle.fill"
         }
     }
@@ -237,7 +265,7 @@ struct RecognitionTestPanel: View {
     private func tint(for result: RecognitionTest.Result) -> Color {
         switch result {
         case .passed: return Theme.mint
-        case .spoof, .cameraSilent: return Theme.coral
+        case .spoof, .wrongTurn, .cameraSilent: return Theme.coral
         default: return Theme.amber
         }
     }
@@ -251,6 +279,7 @@ struct RecognitionTestPanel: View {
         case .tooDark: return "It's too dark to see you"
         case .stranger: return "This face doesn't match a saved one"
         case .spoof: return "This looked like a screen or a photo"
+        case .wrongTurn: return "That was the wrong way"
         case .cameraSilent: return "The camera isn't responding"
         }
     }
@@ -263,6 +292,7 @@ struct RecognitionTestPanel: View {
         case .tooDark: return "Turn on a light or face a window."
         case .stranger: return "If your look has changed, add another face. Glasses and hats are worth their own."
         case .spoof: return "A rectangle surrounded the face. Move away from frames or screens behind you."
+        case .wrongTurn: return "At the lock screen this counts as a failed attempt, which is what stops a video of you. Follow the arrow, and look back at the screen between turns."
         case .cameraSilent: return "Another app may be using it. Close that app and test again."
         }
     }

@@ -50,7 +50,7 @@ private final class EdgePanel: NSPanel {
 final class LockBadge {
     enum Content: Equatable {
         case scanning
-        case turn(TurnDirection, progress: Double)
+        case turn(TurnDirection, progress: Double, step: Int, of: Int)
         case success
         case failure
         case message(String, String)
@@ -267,7 +267,7 @@ private struct BadgeContent: View {
             ScanMark(state: .success).frame(width: 76, height: 76)
         case .failure:
             ScanMark(state: .failure).frame(width: 76, height: 76)
-        case .turn(let direction, let progress):
+        case .turn(let direction, let progress, let step, let steps):
             HStack(spacing: 12) {
                 ZStack {
                     Circle().stroke(.white.opacity(0.18), lineWidth: 3)
@@ -280,9 +280,16 @@ private struct BadgeContent: View {
                         .foregroundStyle(.white)
                 }
                 .frame(width: 36, height: 36)
-                Text(direction == .left ? "Slowly turn left" : "Slowly turn right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(direction == .left ? "Slowly turn left" : "Slowly turn right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    if steps > 1 {
+                        Text("Turn \(step) of \(steps), then look back")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
             }
         case .blink(let headMovementCounts):
             HStack(spacing: 12) {

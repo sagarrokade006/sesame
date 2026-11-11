@@ -197,8 +197,9 @@ final class UnlockController {
         var rules = UnlockAttempt.Rules()
         rules.requiresAttention = settings.requiresAttention
         rules.requiresBlink = settings.requiresBlink
-        let challenge = settings.usesTurnChallenge ? TurnChallenge(direction: TurnDirection.allCases.randomElement() ?? .left) : nil
-        if challenge != nil { rules.duration = 9 }
+        var generator = SystemRandomNumberGenerator()
+        let challenge = settings.usesTurnChallenge ? TurnChallenge.random(steps: 2, using: &generator) : nil
+        if challenge != nil { rules.duration = 11 }
 
         let id = UUID()
         scanID = id
@@ -256,7 +257,7 @@ final class UnlockController {
 
     private func showProgress() {
         if let challenge = attempt?.challenge, !challenge.isComplete {
-            badge.show(.turn(challenge.direction, progress: challenge.progress))
+            badge.show(.turn(challenge.direction, progress: challenge.progress, step: challenge.step + 1, of: challenge.stepCount))
         } else if attempt?.isWaitingForProof == true {
             badge.show(.blink(headMovementCounts: !vault.contents.settings.requiresBlink))
         } else {
@@ -307,6 +308,9 @@ final class UnlockController {
             fail(.stranger, note: nil)
         case .spoof:
             fail(.spoof, note: "A screen or card shape surrounded the face.")
+        case .wrongTurn:
+            // A recording guessing the direction. Counts as a failed attempt and doesn't retry by itself.
+            fail(.spoof, note: "Turned the wrong way for the head-turn check.")
         case .expired:
             endScan()
             if current.sawOwner {

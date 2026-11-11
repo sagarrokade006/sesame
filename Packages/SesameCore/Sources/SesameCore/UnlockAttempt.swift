@@ -25,6 +25,8 @@ public struct UnlockAttempt: Sendable {
         case unlock(name: String)
         case stranger
         case spoof
+        /// Turned the other way from the one asked for, as a video guessing would.
+        case wrongTurn
         case expired
     }
 
@@ -80,6 +82,7 @@ public struct UnlockAttempt: Sendable {
         let finding = judge.observe(reading, as: evidence)
         if finding == .spoof { return .spoof }
         if verdict == .stranger { forgetContinuity() } else { challenge?.observe(yaw: reading.yaw) }
+        if challenge?.turnedWrongWay == true { return .wrongTurn }
 
         guard case .owner(let name) = verdict else {
             matchStreak = 0
@@ -96,7 +99,8 @@ public struct UnlockAttempt: Sendable {
         }
         matchStreak += 1
 
-        let provedAlive = finding == .alive
+        // With a head-turn check, the turns themselves have to show a real head, so tilting a photo can't pass it.
+        let provedAlive = finding == .alive && (challenge == nil || judge.hasDepthProof)
         let passedChallenge = challenge?.isComplete ?? true
         isWaitingForProof = matchStreak >= rules.matchingFramesRequired && passedChallenge && !provedAlive
         return matchStreak >= rules.matchingFramesRequired && provedAlive && passedChallenge

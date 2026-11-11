@@ -3,6 +3,15 @@
 Every release of Sesame, newest first. The app shows the latest entry after it updates, and the update window shows it
 before you install.
 
+## 1.0.4
+
+- A video of you can no longer unlock your Mac. The head-turn check is now on by default, including for existing
+  setups: Sesame asks you to turn your head two random ways, which a recording can't know in advance. A turn the
+  wrong way counts as a failed attempt, and the turns must show a real head, so tilting a photo or phone doesn't pass.
+- Require attention now needs both eyes open. A wink, or one eye closed or covered, no longer counts as looking at the
+  screen.
+- Test face unlock tells you when it's waiting for you to open both eyes.
+
 ## 1.0.3
 
 - Sesame can open when you log in, and asks for Touch ID as soon as it starts, so a restart no longer leaves face

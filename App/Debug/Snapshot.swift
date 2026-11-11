@@ -60,7 +60,7 @@ enum Snapshot {
             let badges: [(String, LockBadge.Content)] = [
                 ("scanning", .scanning),
                 ("blink", .blink(headMovementCounts: true)),
-                ("turn", .turn(.left, progress: 0.6)),
+                ("turn", .turn(.left, progress: 0.6, step: 1, of: 2)),
                 ("success", .success),
                 ("failure", .failure),
                 ("retry", .message("Try again", LockBadge.retryHint)),

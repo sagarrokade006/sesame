@@ -37,9 +37,13 @@ public struct FaceReading: Sendable, Equatable {
         return (leftEyeOpenness + rightEyeOpenness) / 2
     }
 
-    public func isAttentive(maximumTurn: Double = 0.35, minimumEyeOpenness: Double = 0.17) -> Bool {
+    /// The camera never measures a closed eye as fully shut: it reads about half as open as an open one, which can
+    /// still clear the fixed minimum. So the two eyes also have to be about as open as each other, which a wink or
+    /// one covered eye isn't. `minimumEyeBalance` is the smaller eye's share of the larger.
+    public func isAttentive(maximumTurn: Double = 0.35, minimumEyeOpenness: Double = 0.17, minimumEyeBalance: Double = 0.65) -> Bool {
         guard let leftEyeOpenness, let rightEyeOpenness, abs(yaw) <= maximumTurn,
-              leftEyeOpenness >= minimumEyeOpenness, rightEyeOpenness >= minimumEyeOpenness
+              leftEyeOpenness >= minimumEyeOpenness, rightEyeOpenness >= minimumEyeOpenness,
+              min(leftEyeOpenness, rightEyeOpenness) >= max(leftEyeOpenness, rightEyeOpenness) * minimumEyeBalance
         else { return false }
         if let pitch, abs(pitch) > maximumTurn { return false }
         return true
@@ -67,6 +71,9 @@ public struct LivenessJudge: Sendable {
     private var turnHistory: [(time: TimeInterval, yaw: Double, shift: Double)] = []
     private var sawDepth = false
     private let acceptsHeadMovement: Bool
+
+    /// Whether the nose was seen to move against the eyes the way only a real, three-dimensional head does.
+    public var hasDepthProof: Bool { sawDepth }
 
     /// `acceptsHeadMovement` false means only a blink proves life.
     public init(acceptsHeadMovement: Bool = true) {
@@ -177,30 +184,60 @@ public enum TurnDirection: String, CaseIterable, Sendable {
 }
 
 /// A random "turn your head" prompt, which a prerecorded video can't anticipate.
+///
+/// It asks for a sequence of turns, chosen when the scan starts, with a return to center between them. A video of
+/// the owner turning one way has to guess every step, and a turn the wrong way fails the scan outright, so guessing
+/// costs an attempt instead of getting another try.
 public struct TurnChallenge: Sendable, Equatable {
-    public let direction: TurnDirection
+    public let directions: [TurnDirection]
+    /// Index of the turn being asked for now.
+    public private(set) var step = 0
+    /// How far into the current turn, 0 to 1.
     public private(set) var progress = 0.0
+    /// The face turned clearly the other way after being centered.
+    public private(set) var turnedWrongWay = false
     private var startedCentered = false
 
     private let requiredTurn = 0.26
     private let centeredTurn = 0.12
 
-    public init(direction: TurnDirection) {
-        self.direction = direction
+    public init(directions: [TurnDirection]) {
+        self.directions = directions.isEmpty ? [.left] : directions
     }
 
-    public var isComplete: Bool { progress >= 1 }
+    public init(direction: TurnDirection) {
+        self.init(directions: [direction])
+    }
+
+    /// `steps` turns, each left or right at random.
+    public static func random(steps: Int, using generator: inout some RandomNumberGenerator) -> TurnChallenge {
+        TurnChallenge(directions: (0..<max(steps, 1)).map { _ in TurnDirection.allCases.randomElement(using: &generator) ?? .left })
+    }
+
+    public var direction: TurnDirection { directions[min(step, directions.count - 1)] }
+    public var stepCount: Int { directions.count }
+    public var isComplete: Bool { step >= directions.count }
 
     public mutating func observe(yaw: Double) {
-        guard !isComplete else { return }
+        guard !isComplete, !turnedWrongWay else { return }
         let turn = yaw * direction.yawSign
-        startedCentered = startedCentered || turn <= centeredTurn
-        if startedCentered {
-            progress = max(progress, min(1, turn / requiredTurn))
+        // Each turn has to start from looking straight ahead, so coming back from the last turn doesn't count.
+        if abs(yaw) <= centeredTurn { startedCentered = true }
+        guard startedCentered else { return }
+        if turn <= -requiredTurn {
+            turnedWrongWay = true
+            return
+        }
+        progress = max(progress, min(1, turn / requiredTurn))
+        if progress >= 1 {
+            step += 1
+            progress = isComplete ? 1 : 0
+            startedCentered = false
         }
     }
 
     public mutating func restart() {
+        step = 0
         progress = 0
         startedCentered = false
     }

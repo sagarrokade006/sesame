@@ -67,7 +67,7 @@ Adding a face happens in the notch, right under the camera you're looking at:
 
 At the lock screen, Sesame shows its progress in the notch too:
 
-| Scanning | Blink to unlock | Turn your head |
+| Scanning | Blink to unlock | Turn your head (random, twice) |
 |---|---|---|
 | ![Scanning](docs/notch-scanning.png) | ![Blink to unlock](docs/notch-blink.png) | ![Turn your head](docs/notch-turn.png) |
 | **Unlocked** | **Not recognized** | **Try again** |
@@ -81,6 +81,12 @@ password.
 ## How it protects you
 
 - Touch ID or your Mac password is needed after every restart and every 48 hours by default.
+- A head-turn check, on by default, asks you to turn your head two random ways. A video of you can't know which, so
+  it's what stops someone holding up a recording. A wrong turn counts as a failed attempt, and the turns have to show
+  a real three-dimensional head, so tilting a photo or phone doesn't pass. Without it, a close-up video of you that
+  includes a blink could unlock your Mac, because a webcam can't tell a screen from a face.
+- With **Require attention** on, which is the default, both eyes have to be open and facing the screen. A wink or one
+  closed eye doesn't count.
 - Recognition needs several clear matches in a row, plus proof of life: a blink or a natural head movement, seen on a
   face that clearly matches. A partly covered face, or a photo held over someone else's face, can't unlock or vouch for
   a blink. A face surrounded by a phone or picture frame is rejected. Turn on **Require a blink** in Security to accept

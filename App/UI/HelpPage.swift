@@ -19,6 +19,7 @@ struct HelpPage: View {
         Topic(question: "The first scan failed. What now?", answer: "Sesame tries again by itself: up to three times when it sees you but you haven't blinked, once when it didn't see anyone. After that, move the pointer or trackpad to scan again. You can always type your password as usual."),
         Topic(question: "How do I turn face unlock off for a while?", answer: "Choose Pause in Sesame's menu bar panel or on Overview: for 1 hour, until tomorrow, or until you turn it back on. Meanwhile your Mac unlocks with your password or Touch ID."),
         Topic(question: "How can I check that it recognizes me?", answer: "On Faces, choose Test. Sesame runs the same checks as the lock screen and shows how well you match and whether it saw you blink, without typing anything or locking your Mac."),
+        Topic(question: "Why does it ask me to turn my head?", answer: "It's the check a video of you can't pass. Sesame picks two directions at random when the scan starts, so a recording can't know them in advance. Turn slowly the way the arrow shows, look back at the screen, then turn the second way. A turn the wrong way counts as a failed attempt. You can switch it off in Security, but then a video of you could unlock your Mac."),
         Topic(question: "Why does it ask me to blink or move?", answer: "Sesame needs proof you're a real person and not a photo, so it watches for a natural blink or a small head movement, seen while your face is clearly visible. To accept only a blink, turn on Require a blink in Security."),
     ]
 

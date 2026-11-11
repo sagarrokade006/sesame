@@ -700,11 +700,11 @@ struct SecurityPage: View {
         ApprovalGate(vault: vault, reason: "change Sesame's security settings") {
             SectionHeader(text: "Scanning")
             Card {
-                SettingRow(icon: "arrow.left.and.right", tint: Theme.violet, title: "Turn challenge", detail: "Asks you to turn your head to a random side, which a video can't predict.") {
+                SettingRow(icon: "arrow.left.and.right", tint: Theme.violet, title: "Head-turn check", detail: "Asks you to turn your head two random ways. A video of you can't know which, so this is what stops someone holding up a recording. A wrong turn counts as a failed attempt.") {
                     Switch(isOn: binding(\.usesTurnChallenge))
                 }
                 RowDivider()
-                SettingRow(icon: "eye.fill", tint: Theme.sky, title: "Require attention", detail: "Only unlocks with your eyes open, facing the screen.") {
+                SettingRow(icon: "eye.fill", tint: Theme.sky, title: "Require attention", detail: "Only unlocks with both eyes open, facing the screen.") {
                     Switch(isOn: binding(\.requiresAttention))
                 }
                 RowDivider()

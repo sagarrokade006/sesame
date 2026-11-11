@@ -7,7 +7,11 @@ import OSLog
 import SesameCore
 
 struct SecuritySettings: Codable, Equatable {
-    var usesTurnChallenge = false
+    /// The one defense a recording of the owner can't pass, so it's on unless switched off.
+    var usesTurnChallenge = true
+    /// Which round of default changes this vault has had, so a stronger default reaches existing setups once.
+    var defaultsVersion = SecuritySettings.currentDefaultsVersion
+    static let currentDefaultsVersion = 2
     var requiresAttention = true
     var scansWhenLocking = false
     var trustHours = TrustWindow.defaultHours
@@ -30,6 +34,12 @@ struct SecuritySettings: Codable, Equatable {
         let saved = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = SecuritySettings()
         usesTurnChallenge = try saved.decodeIfPresent(Bool.self, forKey: .usesTurnChallenge) ?? defaults.usesTurnChallenge
+        let savedVersion = try saved.decodeIfPresent(Int.self, forKey: .defaultsVersion) ?? 1
+        if savedVersion < 2 {
+            // 1.0.4: a video of the owner could unlock without the head-turn check, so it's turned on once.
+            usesTurnChallenge = true
+        }
+        defaultsVersion = Self.currentDefaultsVersion
         requiresAttention = try saved.decodeIfPresent(Bool.self, forKey: .requiresAttention) ?? defaults.requiresAttention
         scansWhenLocking = try saved.decodeIfPresent(Bool.self, forKey: .scansWhenLocking) ?? defaults.scansWhenLocking
         trustHours = try saved.decodeIfPresent(Int.self, forKey: .trustHours) ?? defaults.trustHours
